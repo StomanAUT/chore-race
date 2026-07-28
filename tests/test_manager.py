@@ -94,3 +94,21 @@ async def test_team_progress_counts_tasks_not_race_points(manager):
     snapshot = manager.state_snapshot()
     assert snapshot["team_progress"] == {"completed": 1, "total": 1}
     assert snapshot["points_today"][participant.id] == 1
+
+
+async def test_planner_settings_are_validated_and_persisted(manager):
+    """Planner settings are centralized instead of hard coded in the UI."""
+    await manager.async_load()
+    settings = await manager.async_update_settings(
+        race_enabled=False,
+        race_duration_seconds=2700,
+        race_weekdays=[4, 0, 2, 2],
+        race_ready_time="18:45",
+    )
+    assert settings.race_enabled is False
+    assert settings.race_duration_seconds == 2700
+    assert settings.race_weekdays == [0, 2, 4]
+    assert settings.race_ready_time == "18:45"
+
+    with pytest.raises(ValidationError):
+        await manager.async_update_settings(race_ready_time="25:99")

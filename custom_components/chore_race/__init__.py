@@ -28,6 +28,7 @@ from .const import (
 from .errors import ChoreRaceError
 from .manager import ChoreRaceManager
 from .models import Difficulty, TaskSource
+from .planner_websocket import async_register_planner_websocket_commands
 from .storage import ChoreRaceStore
 from .websocket import async_register_websocket_commands
 
@@ -129,6 +130,7 @@ ADMIN_SERVICES = {
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register actions and WebSocket commands independent of entry load."""
     async_register_websocket_commands(hass)
+    async_register_planner_websocket_commands(hass)
 
     async def handle_service(call: ServiceCall) -> dict[str, Any] | None:
         manager = _get_manager(hass)

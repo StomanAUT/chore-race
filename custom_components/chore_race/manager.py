@@ -26,6 +26,7 @@ from .models import (
     Completion,
     Difficulty,
     Participant,
+    Settings,
     TaskSource,
     TaskStatus,
 )
@@ -184,6 +185,70 @@ class ChoreRaceManager:
                 setattr(chore_type, key, value)
             await self._async_commit()
             return chore_type
+
+    async def async_update_settings(self, **changes: Any) -> Settings:
+        """Update persisted planner and future race settings."""
+        allowed = {
+            "normal_completion_points",
+            "fair_play_bonus",
+            "race_enabled",
+            "race_duration_seconds",
+            "race_weekdays",
+            "race_ready_time",
+        }
+        if unknown := set(changes) - allowed:
+            raise ValidationError(f"Unknown settings fields: {sorted(unknown)}")
+
+        if "normal_completion_points" in changes:
+            changes["normal_completion_points"] = self._validate_points(
+                changes["normal_completion_points"],
+                "normal_completion_points",
+            )
+        if "fair_play_bonus" in changes:
+            changes["fair_play_bonus"] = self._validate_points(
+                changes["fair_play_bonus"],
+                "fair_play_bonus",
+            )
+        if "race_duration_seconds" in changes:
+            duration = changes["race_duration_seconds"]
+            if isinstance(duration, bool) or not 60 <= duration <= 14400:
+                raise ValidationError(
+                    "race_duration_seconds must be between 60 and 14400"
+                )
+        if "race_weekdays" in changes:
+            weekdays = changes["race_weekdays"]
+            if (
+                not isinstance(weekdays, list)
+                or not weekdays
+                or any(
+                    isinstance(day, bool)
+                    or not isinstance(day, int)
+                    or day not in range(7)
+                    for day in weekdays
+                )
+            ):
+                raise ValidationError("race_weekdays must contain weekdays 0 through 6")
+            changes["race_weekdays"] = sorted(set(weekdays))
+        if "race_ready_time" in changes:
+            ready_time = changes["race_ready_time"]
+            try:
+                hour_text, minute_text = ready_time.split(":", maxsplit=1)
+                hour = int(hour_text)
+                minute = int(minute_text)
+            except (AttributeError, TypeError, ValueError) as err:
+                raise ValidationError("race_ready_time must use HH:MM") from err
+            if (
+                len(ready_time) != 5
+                or not 0 <= hour <= 23
+                or not 0 <= minute <= 59
+            ):
+                raise ValidationError("race_ready_time must use HH:MM")
+
+        async with self._mutation_lock:
+            for key, value in changes.items():
+                setattr(self._data.settings, key, value)
+            await self._async_commit()
+            return self._data.settings
 
     async def async_create_task(
         self,

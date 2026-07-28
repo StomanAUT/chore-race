@@ -61,6 +61,20 @@ Authenticated read-only WebSocket commands:
 - `chore_race/get_participants`
 - `chore_race/get_chore_types`
 - `chore_race/get_leaderboard`
+- `chore_race/get_areas`
+- `chore_race/get_settings`
+
+Admin-only planner commands:
+
+- `chore_race/create_participant`
+- `chore_race/update_participant`
+- `chore_race/create_chore_type`
+- `chore_race/create_task`
+- `chore_race/update_settings`
+
+These commands are the stable backend boundary for the adult planner. They use
+Home Assistant authentication and its built-in admin permission checks rather
+than a parallel account or role system.
 
 ## Architecture
 
