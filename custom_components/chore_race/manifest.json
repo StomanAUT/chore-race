@@ -1,0 +1,9 @@
+{
+  "domain": "chore_race",
+  "name": "Chore Race",
+  "codeowners": [],
+  "config_flow": true,
+  "integration_type": "service",
+  "iot_class": "local_push",
+  "version": "0.1.0"
+}

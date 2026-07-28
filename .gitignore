@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Home Assistant runtime state and secrets
+.storage/
+deps/
+home-assistant.log*
+home-assistant_v2.db*
+secrets.yaml

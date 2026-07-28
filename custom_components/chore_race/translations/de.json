@@ -1,0 +1,30 @@
+{
+  "title": "Chore Race",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Chore Race einrichten",
+        "description": "Erstellt den lokalen Chore-Race-Haushaltsplan."
+      }
+    },
+    "abort": {
+      "already_configured": "Chore Race ist bereits eingerichtet."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "open_tasks": {
+        "name": "Offene Aufgaben"
+      },
+      "completed_today": {
+        "name": "Heute erledigt"
+      },
+      "week_leader": {
+        "name": "Wochenführung",
+        "state": {
+          "none": "Niemand"
+        }
+      }
+    }
+  }
+}

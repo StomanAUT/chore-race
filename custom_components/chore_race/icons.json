@@ -1,0 +1,12 @@
+{
+  "services": {
+    "create_participant": {"service": "mdi:account-plus"},
+    "update_participant": {"service": "mdi:account-edit"},
+    "create_chore_type": {"service": "mdi:shape-plus"},
+    "update_chore_type": {"service": "mdi:shape"},
+    "create_task": {"service": "mdi:clipboard-plus"},
+    "complete_task": {"service": "mdi:check-bold"},
+    "undo_completion": {"service": "mdi:undo"},
+    "delete_task": {"service": "mdi:delete"}
+  }
+}

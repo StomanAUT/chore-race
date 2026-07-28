@@ -1,0 +1,191 @@
+create_participant:
+  name: Create participant
+  description: Create a participant with a stable ID.
+  fields:
+    name:
+      required: true
+      selector:
+        text:
+    person_entity_id:
+      selector:
+        entity:
+          domain: person
+    avatar:
+      selector:
+        text:
+    sort_order:
+      default: 0
+      selector:
+        number:
+          mode: box
+
+update_participant:
+  name: Update participant
+  description: Update participant fields without changing the stable ID.
+  fields:
+    participant_id:
+      required: true
+      selector:
+        text:
+    name:
+      selector:
+        text:
+    active:
+      selector:
+        boolean:
+    person_entity_id:
+      selector:
+        entity:
+          domain: person
+    avatar:
+      selector:
+        text:
+    sort_order:
+      selector:
+        number:
+          mode: box
+
+create_chore_type:
+  name: Create chore type
+  description: Create a reusable chore definition.
+  fields:
+    name:
+      required: true
+      selector:
+        text:
+    default_race_points:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    icon:
+      selector:
+        icon:
+    image:
+      selector:
+        text:
+    streak_enabled:
+      default: false
+      selector:
+        boolean:
+    streak_max_bonus:
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    default_copilot_points:
+      default: 1
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    difficulty:
+      selector:
+        select:
+          options:
+            - easy
+            - medium
+            - hard
+    adult_only:
+      default: false
+      selector:
+        boolean:
+    confirmation_required:
+      default: false
+      selector:
+        boolean:
+
+update_chore_type:
+  name: Update chore type
+  description: Update future defaults; existing task point snapshots remain unchanged.
+  fields:
+    chore_type_id:
+      required: true
+      selector:
+        text:
+    name:
+      selector:
+        text:
+    default_race_points:
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    active:
+      selector:
+        boolean:
+
+create_task:
+  name: Create task
+  description: Create a concrete dated task.
+  fields:
+    chore_type_id:
+      required: true
+      selector:
+        text:
+    date:
+      required: true
+      selector:
+        date:
+    area_id:
+      selector:
+        area:
+    race_points:
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    preferred_participant_id:
+      selector:
+        text:
+    source:
+      default: manual
+      selector:
+        select:
+          options:
+            - manual
+            - recurring
+            - entity
+            - automation
+            - chain
+    source_entity_id:
+      selector:
+        entity:
+
+complete_task:
+  name: Complete task
+  description: Complete an open task once and award one normal point.
+  fields:
+    task_id:
+      required: true
+      selector:
+        text:
+    participant_id:
+      required: true
+      selector:
+        text:
+
+undo_completion:
+  name: Undo completion
+  description: Revert a completion and reopen its task.
+  fields:
+    completion_id:
+      required: true
+      selector:
+        text:
+
+delete_task:
+  name: Delete task
+  description: Delete a task that has no completion history.
+  fields:
+    task_id:
+      required: true
+      selector:
+        text:
