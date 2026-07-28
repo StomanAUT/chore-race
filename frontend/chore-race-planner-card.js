@@ -104,11 +104,33 @@
         ?.addEventListener("submit", (event) => {
           event.preventDefault();
           const values = new FormData(event.currentTarget);
+          const personEntityId = values.get("person_entity_id") || null;
+          const person = personEntityId
+            ? this._hass?.states?.[personEntityId]
+            : undefined;
           this._submit(
             "chore_race/create_participant",
-            { name: values.get("name").trim() },
+            {
+              name: values.get("name").trim(),
+              person_entity_id: personEntityId,
+              avatar: person?.attributes?.entity_picture || null,
+            },
             "Teilnehmer wurde angelegt.",
           );
+        });
+
+      this.shadowRoot
+        .querySelector('[name="person_entity_id"]')
+        ?.addEventListener("change", (event) => {
+          const person = this._hass?.states?.[event.currentTarget.value];
+          const nameInput = this.shadowRoot.querySelector(
+            '[data-form="participant"] [name="name"]',
+          );
+          if (person && nameInput) {
+            nameInput.value =
+              person.attributes?.friendly_name ||
+              person.entity_id.replace(/^person\./, "");
+          }
         });
 
       this.shadowRoot
@@ -154,6 +176,24 @@
           (item) =>
             `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`,
         )
+        .join("");
+    }
+
+    _personOptions() {
+      return Object.values(this._hass?.states ?? {})
+        .filter((entity) => entity.entity_id.startsWith("person."))
+        .sort((a, b) =>
+          String(a.attributes?.friendly_name ?? a.entity_id).localeCompare(
+            String(b.attributes?.friendly_name ?? b.entity_id),
+            "de",
+          ),
+        )
+        .map((entity) => {
+          const label =
+            entity.attributes?.friendly_name ||
+            entity.entity_id.replace(/^person\./, "");
+          return `<option value="${escapeHtml(entity.entity_id)}">${escapeHtml(label)}</option>`;
+        })
         .join("");
     }
 
@@ -236,6 +276,10 @@
           <div class="forms">
             <form data-form="participant">
               <h3><span>1</span> Teilnehmer</h3>
+              <label>Home-Assistant-Person<select name="person_entity_id">
+                <option value="">Keine – Namen manuell eingeben</option>
+                ${this._personOptions()}
+              </select></label>
               <label>Name<input required maxlength="100" name="name"
                 placeholder="z. B. Lina"></label>
               <button ${disabled}>Teilnehmer anlegen</button>
