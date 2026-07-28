@@ -61,13 +61,12 @@
       this._loading = true;
       this._render();
       try {
-        const [participants, choreTypes, tasks, areas] = await Promise.all([
+        const [participants, choreTypes, tasks] = await Promise.all([
           this._hass.callWS({ type: "chore_race/get_participants" }),
           this._hass.callWS({ type: "chore_race/get_chore_types" }),
           this._hass.callWS({ type: "chore_race/get_tasks" }),
-          this._hass.callWS({ type: "chore_race/get_areas" }),
         ]);
-        this._data = { participants, choreTypes, tasks, areas };
+        this._data = { participants, choreTypes, tasks, areas: [] };
         this._error = "";
       } catch (error) {
         this._error = messageFor(error);
@@ -293,7 +292,7 @@
         h3 span { display:inline-grid; place-items:center; width:24px; height:24px;
           margin-right:7px; border-radius:8px; color:#fff; background:var(--accent); }
         .refresh { width:42px; height:42px; padding:0; font-size:22px; border-radius:14px; }
-        .forms { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+        .forms { display:grid; grid-template-columns:1fr;
           gap:14px; margin-top:20px; align-items:start; }
         form,.tasks { padding:16px; border:1px solid rgba(105,92,255,.18);
           border-radius:18px; background:rgba(255,255,255,.82); }
@@ -322,7 +321,6 @@
         .task-icon { display:grid; place-items:center; flex:0 0 32px; height:32px;
           color:#fff; background:var(--accent); border-radius:10px; }
         .empty { margin:0; padding:14px; color:var(--muted); text-align:center; }
-        @media (max-width:900px) { .forms { grid-template-columns:1fr; } }
         @media (max-width:520px) { .row,ul { grid-template-columns:1fr; } }
       `;
     }
