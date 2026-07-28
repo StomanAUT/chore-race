@@ -61,12 +61,20 @@
       this._loading = true;
       this._render();
       try {
-        const [participants, choreTypes, tasks] = await Promise.all([
+        const [participants, choreTypes, tasks, areas] = await Promise.all([
           this._hass.callWS({ type: "chore_race/get_participants" }),
           this._hass.callWS({ type: "chore_race/get_chore_types" }),
           this._hass.callWS({ type: "chore_race/get_tasks" }),
+          this._hass.callWS({ type: "config/area_registry/list" }),
         ]);
-        this._data = { participants, choreTypes, tasks, areas: [] };
+        this._data = {
+          participants,
+          choreTypes,
+          tasks,
+          areas: [...areas].sort((a, b) =>
+            String(a.name).localeCompare(String(b.name), "de"),
+          ),
+        };
         this._error = "";
       } catch (error) {
         this._error = messageFor(error);
