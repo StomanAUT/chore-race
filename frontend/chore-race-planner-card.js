@@ -33,7 +33,7 @@
     }
 
     static getStubConfig() {
-      return { title: "Chore Race Planer" };
+      return { title: "Chore Race Planer", max_width: 960 };
     }
 
     setConfig(config) {
@@ -330,16 +330,24 @@
     }
 
     _styles() {
+      const maxWidth = Math.min(
+        1400,
+        Math.max(360, Number(this._config.max_width) || 960),
+      );
+      const accent = /^#[0-9a-f]{6}$/i.test(this._config.accent_color)
+        ? this._config.accent_color
+        : "#74829a";
       return `
         :host { display:block; --ink:var(--primary-text-color,#172036);
-          --muted:var(--secondary-text-color,#667085); --accent:#695cff;
+          width:min(100%,${maxWidth}px); margin-inline:auto;
+          --muted:var(--secondary-text-color,#667085); --accent:${accent};
           --surface:var(--ha-card-background,var(--card-background-color,#fbfbff));
           --surface-raised:var(--secondary-background-color,#f5f4ff);
           --line:var(--divider-color,rgba(105,92,255,.18)); }
         * { box-sizing:border-box; }
         ha-card { display:block; color:var(--ink); padding:clamp(18px,3vw,28px);
           border-radius:24px; background:linear-gradient(145deg,var(--surface),
-            color-mix(in srgb,var(--surface) 88%,#695cff));
+            color-mix(in srgb,var(--surface) 92%,var(--accent)));
           box-shadow:0 18px 55px rgba(31,38,90,.14);
           font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif); }
         header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
@@ -359,8 +367,11 @@
           background:var(--surface); border:1px solid var(--line); border-radius:10px; font:inherit; }
         input:focus,select:focus { outline:3px solid rgba(105,92,255,.17);
           border-color:var(--accent); }
-        button { min-height:42px; padding:9px 14px; color:#fff; background:var(--accent);
-          border:0; border-radius:11px; font:inherit; font-weight:800; cursor:pointer; }
+        button { min-height:42px; padding:9px 14px; color:var(--ink);
+          background:color-mix(in srgb,var(--accent) 28%,var(--surface));
+          border:1px solid color-mix(in srgb,var(--accent) 55%,var(--line));
+          border-radius:11px; font:inherit; font-weight:750; cursor:pointer; }
+        button:hover { background:color-mix(in srgb,var(--accent) 38%,var(--surface)); }
         form button { width:100%; margin-top:6px; }
         button:disabled { cursor:not-allowed; opacity:.45; }
         .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
@@ -373,7 +384,7 @@
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
         li { display:flex; gap:10px; align-items:center; padding:10px; border-radius:12px;
-          background:color-mix(in srgb,var(--surface-raised) 86%,#695cff); }
+          background:color-mix(in srgb,var(--surface-raised) 92%,var(--accent)); }
         li small { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
         .task-icon { display:grid; place-items:center; flex:0 0 32px; height:32px;
           color:#fff; background:var(--accent); border-radius:10px; }

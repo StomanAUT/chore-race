@@ -42,6 +42,8 @@ type: custom:chore-race-card
 title: Familien Grand Prix
 target_points: 12
 refresh_interval: 30
+max_width: 820
+accent_color: "#74829a"
 ```
 
 For the admin-only planner, also copy `chore-race-planner-card.js`, register it
@@ -50,11 +52,17 @@ as a module resource, and add:
 ```yaml
 type: custom:chore-race-planner-card
 title: Chore Race Planer
+max_width: 960
+accent_color: "#74829a"
 ```
 
 The planner guides an administrator through creating a participant, a reusable
 chore type, and then a dated task. Existing open tasks are listed below the
 forms.
+
+Both cards accept a `max_width` between 360 and 1400 pixels and an optional
+six-digit hexadecimal `accent_color`. They always shrink to the available
+mobile width.
 
 `refresh_interval` is clamped to 10-300 seconds. Set
 `force_reduced_motion: true` to disable animation regardless of the operating

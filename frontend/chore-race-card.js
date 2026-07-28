@@ -57,7 +57,7 @@
     }
 
     static getStubConfig() {
-      return { title: "Chore Race", target_points: 10 };
+      return { title: "Chore Race", target_points: 10, max_width: 820 };
     }
 
     setConfig(config) {
@@ -231,11 +231,18 @@
     }
 
     _styles() {
+      const maxWidth = clamp(Number(this._config.max_width) || 820, 360, 1400);
+      const accent = /^#[0-9a-f]{6}$/i.test(this._config.accent_color)
+        ? this._config.accent_color
+        : "#74829a";
       return `
         :host {
           display: block;
+          width: min(100%, ${maxWidth}px);
+          margin-inline: auto;
           --ink: var(--primary-text-color, #172036);
           --muted: var(--secondary-text-color, #667085);
+          --accent: ${accent};
           --surface: var(--ha-card-background, var(--card-background-color, #fbfbff));
           --surface-raised: var(--secondary-background-color, rgba(255, 255, 255, .82));
           --line: var(--divider-color, rgba(105, 92, 255, .18));
@@ -248,7 +255,7 @@
             linear-gradient(
               145deg,
               var(--surface),
-              color-mix(in srgb, var(--surface) 88%, #695cff)
+              color-mix(in srgb, var(--surface) 92%, var(--accent))
             );
           border-radius: var(--ha-card-border-radius, 24px); padding: clamp(18px, 4vw, 28px);
           box-shadow: var(--ha-card-box-shadow, 0 18px 55px rgba(31, 38, 90, .12));
@@ -256,13 +263,13 @@
         }
         header, .team-copy, footer, .lane-heading, .driver { display: flex; align-items: center; }
         header { justify-content: space-between; gap: 16px; }
-        .eyebrow { font-size: 11px; letter-spacing: .16em; font-weight: 800; color: #695cff; }
+        .eyebrow { font-size: 11px; letter-spacing: .16em; font-weight: 800; color: var(--accent); }
         h2 { margin: 4px 0 0; color: var(--ink); font-size: clamp(24px, 6vw, 34px);
           line-height: 1; letter-spacing: -.04em; }
         .flag { position: relative; width: 48px; height: 48px; border-radius: 16px;
-          background: rgba(105, 92, 255, .12); transform: rotate(4deg); }
+          background: color-mix(in srgb, var(--accent) 16%, transparent); transform: rotate(4deg); }
         .flag::before { content: ""; position: absolute; left: 14px; top: 9px;
-          width: 3px; height: 31px; border-radius: 3px; background: #695cff; }
+          width: 3px; height: 31px; border-radius: 3px; background: var(--accent); }
         .flag i { position: absolute; left: 17px; top: 10px; width: 22px; height: 17px;
           background: repeating-conic-gradient(#172036 0 25%, #fff 0 50%) 0 / 8px 8px;
           clip-path: polygon(0 0, 100% 0, 82% 50%, 100% 100%, 0 100%); }
@@ -272,15 +279,15 @@
         .team-copy strong { color: var(--ink); font-size: 19px; }
         .team-copy small { color: var(--muted); font-size: 12px; font-weight: 600; }
         .meter { height: 9px; margin-top: 12px; border-radius: 99px;
-          overflow: hidden; background: rgba(105, 92, 255, .12); }
+          overflow: hidden; background: color-mix(in srgb, var(--accent) 14%, transparent); }
         .meter i { display: block; width: var(--team-progress); height: 100%; border-radius: inherit;
-          background: linear-gradient(90deg, #695cff, #24cf9e); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
+          background: linear-gradient(90deg, var(--accent), #54a995); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
         .lanes { display: grid; gap: 14px; }
         .lane-heading { justify-content: space-between; margin-bottom: 6px;
           color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
         .driver { gap: 8px; }
         .driver > span, .driver > img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
-          display: grid; place-items: center; background: #695cff; color: white; font-size: 11px; font-weight: 800; }
+          display: grid; place-items: center; background: var(--accent); color: white; font-size: 11px; font-weight: 800; }
         .track { position: relative; height: 45px; overflow: hidden; border-radius: 13px;
           background: linear-gradient(180deg, #3b4050, #272b38); box-shadow: inset 0 2px 7px rgba(0,0,0,.28); }
         .track-lines { position: absolute; inset: 21px 12px auto; height: 2px;
