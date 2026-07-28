@@ -84,13 +84,13 @@
       }
     }
 
-    async _submit(type, payload, successMessage) {
+    async _submit(service, payload, successMessage) {
       this._saving = true;
       this._notice = "";
       this._error = "";
       this._render();
       try {
-        await this._hass.callWS({ type, ...payload });
+        await this._hass.callService("chore_race", service, payload);
         this._notice = successMessage;
         await this._load();
       } catch (error) {
@@ -117,7 +117,7 @@
             ? this._hass?.states?.[personEntityId]
             : undefined;
           this._submit(
-            "chore_race/create_participant",
+            "create_participant",
             {
               name: values.get("name").trim(),
               person_entity_id: personEntityId,
@@ -147,7 +147,7 @@
           event.preventDefault();
           const values = new FormData(event.currentTarget);
           this._submit(
-            "chore_race/create_chore_type",
+            "create_chore_type",
             {
               name: values.get("name").trim(),
               default_race_points: Number(values.get("points")),
@@ -164,7 +164,7 @@
           event.preventDefault();
           const values = new FormData(event.currentTarget);
           this._submit(
-            "chore_race/create_task",
+            "create_task",
             {
               chore_type_id: values.get("chore_type_id"),
               date: values.get("date"),
