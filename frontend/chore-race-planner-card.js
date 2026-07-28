@@ -279,10 +279,15 @@
 
     _styles() {
       return `
-        :host { display:block; --ink:#172036; --muted:#667085; --accent:#695cff; }
+        :host { display:block; --ink:var(--primary-text-color,#172036);
+          --muted:var(--secondary-text-color,#667085); --accent:#695cff;
+          --surface:var(--ha-card-background,var(--card-background-color,#fbfbff));
+          --surface-raised:var(--secondary-background-color,#f5f4ff);
+          --line:var(--divider-color,rgba(105,92,255,.18)); }
         * { box-sizing:border-box; }
         ha-card { display:block; color:var(--ink); padding:clamp(18px,3vw,28px);
-          border-radius:24px; background:linear-gradient(145deg,#fbfbff,#f0efff);
+          border-radius:24px; background:linear-gradient(145deg,var(--surface),
+            color-mix(in srgb,var(--surface) 88%,#695cff));
           box-shadow:0 18px 55px rgba(31,38,90,.14);
           font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif); }
         header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
@@ -294,12 +299,12 @@
         .refresh { width:42px; height:42px; padding:0; font-size:22px; border-radius:14px; }
         .forms { display:grid; grid-template-columns:1fr;
           gap:14px; margin-top:20px; align-items:start; }
-        form,.tasks { padding:16px; border:1px solid rgba(105,92,255,.18);
-          border-radius:18px; background:rgba(255,255,255,.82); }
+        form,.tasks { padding:16px; border:1px solid var(--line);
+          border-radius:18px; background:var(--surface-raised); }
         label { display:grid; gap:6px; margin:10px 0; color:var(--muted);
           font-size:12px; font-weight:700; }
         input,select { width:100%; min-height:42px; padding:9px 11px; color:var(--ink);
-          background:#fff; border:1px solid #cfd3e1; border-radius:10px; font:inherit; }
+          background:var(--surface); border:1px solid var(--line); border-radius:10px; font:inherit; }
         input:focus,select:focus { outline:3px solid rgba(105,92,255,.17);
           border-color:var(--accent); }
         button { min-height:42px; padding:9px 14px; color:#fff; background:var(--accent);
@@ -316,7 +321,7 @@
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
         li { display:flex; gap:10px; align-items:center; padding:10px; border-radius:12px;
-          background:#f5f4ff; }
+          background:color-mix(in srgb,var(--surface-raised) 86%,#695cff); }
         li small { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
         .task-icon { display:grid; place-items:center; flex:0 0 32px; height:32px;
           color:#fff; background:var(--accent); border-radius:10px; }
