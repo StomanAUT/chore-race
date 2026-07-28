@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chore Race card prototype</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #edf0fa; }
+      main { width: min(620px, calc(100% - 28px)); }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+      button { border: 0; border-radius: 999px; padding: 9px 14px; background: #695cff; color: white;
+        font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+      @media (prefers-color-scheme: dark) { body { background: #111522; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="controls">
+        <button id="point">Punkt vergeben</button>
+        <button id="task">Aufgabe abschliessen</button>
+        <button id="motion">Bewegung reduzieren</button>
+        <button id="reset">Zuruecksetzen</button>
+      </div>
+      <chore-race-card></chore-race-card>
+    </main>
+    <script src="./chore-race-card.js"></script>
+    <script>
+      const initial = {
+        state: {
+          open_tasks_today: 5,
+          completed_tasks_today: 7,
+          team_progress: { completed: 7, total: 12 },
+        },
+        participants: [
+          { id: "lina", name: "Lina", active: true },
+          { id: "noah", name: "Noah", active: true },
+          { id: "sam", name: "Sam", active: true },
+        ],
+        leaderboard: [
+          { participant_id: "lina", name: "Lina", points: 8 },
+          { participant_id: "noah", name: "Noah", points: 6 },
+          { participant_id: "sam", name: "Sam", points: 3 },
+        ],
+      };
+      let data = structuredClone(initial);
+      let reduced = false;
+      const card = document.querySelector("chore-race-card");
+      const connect = () => {
+        card.setConfig({ title: "Familien Grand Prix", target_points: 12, force_reduced_motion: reduced });
+        card.hass = {
+          callWS: async ({ type }) => structuredClone(
+            type.endsWith("get_state") ? data.state :
+              type.endsWith("get_participants") ? data.participants : data.leaderboard,
+          ),
+        };
+        card._load();
+      };
+      document.querySelector("#point").onclick = () => {
+        data.leaderboard[1].points += 1;
+        connect();
+      };
+      document.querySelector("#task").onclick = () => {
+        if (data.state.team_progress.completed < data.state.team_progress.total) {
+          data.state.team_progress.completed += 1;
+          data.state.completed_tasks_today += 1;
+          data.state.open_tasks_today -= 1;
+        }
+        connect();
+      };
+      document.querySelector("#motion").onclick = (event) => {
+        reduced = !reduced;
+        event.currentTarget.textContent = reduced ? "Bewegung aktivieren" : "Bewegung reduzieren";
+        connect();
+      };
+      document.querySelector("#reset").onclick = () => {
+        data = structuredClone(initial);
+        connect();
+      };
+      connect();
+    </script>
+  </body>
+</html>
