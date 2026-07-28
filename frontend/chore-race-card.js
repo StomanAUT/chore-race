@@ -232,7 +232,14 @@
 
     _styles() {
       return `
-        :host { display: block; --ink: var(--primary-text-color, #172036); }
+        :host {
+          display: block;
+          --ink: #172036;
+          --muted: #667085;
+          --surface: #fbfbff;
+          --surface-raised: rgba(255, 255, 255, .82);
+          --line: rgba(105, 92, 255, .18);
+        }
         * { box-sizing: border-box; }
         ha-card {
           display: block; overflow: hidden; color: var(--ink);
@@ -240,12 +247,8 @@
             radial-gradient(circle at 92% 0%, rgba(105, 92, 255, .2), transparent 28%),
             linear-gradient(
               145deg,
-              var(--ha-card-background, #fff),
-              color-mix(
-                in srgb,
-                var(--ha-card-background, #fff) 94%,
-                #695cff
-              )
+              var(--surface),
+              #f2f0ff
             );
           border-radius: var(--ha-card-border-radius, 24px); padding: clamp(18px, 4vw, 28px);
           box-shadow: var(--ha-card-box-shadow, 0 18px 55px rgba(31, 38, 90, .12));
@@ -254,7 +257,8 @@
         header, .team-copy, footer, .lane-heading, .driver { display: flex; align-items: center; }
         header { justify-content: space-between; gap: 16px; }
         .eyebrow { font-size: 11px; letter-spacing: .16em; font-weight: 800; color: #695cff; }
-        h2 { margin: 4px 0 0; font-size: clamp(24px, 6vw, 34px); line-height: 1; letter-spacing: -.04em; }
+        h2 { margin: 4px 0 0; color: #172036; font-size: clamp(24px, 6vw, 34px);
+          line-height: 1; letter-spacing: -.04em; }
         .flag { position: relative; width: 48px; height: 48px; border-radius: 16px;
           background: rgba(105, 92, 255, .12); transform: rotate(4deg); }
         .flag::before { content: ""; position: absolute; left: 14px; top: 9px;
@@ -262,18 +266,18 @@
         .flag i { position: absolute; left: 17px; top: 10px; width: 22px; height: 17px;
           background: repeating-conic-gradient(#172036 0 25%, #fff 0 50%) 0 / 8px 8px;
           clip-path: polygon(0 0, 100% 0, 82% 50%, 100% 100%, 0 100%); }
-        .team { margin: 22px 0 18px; padding: 16px; border: 1px solid rgba(105, 92, 255, .14);
-          border-radius: 18px; background: color-mix(in srgb, var(--ha-card-background, #fff) 76%, transparent); }
-        .team-copy { justify-content: space-between; gap: 12px; font-size: 13px; }
-        .team-copy strong { font-size: 19px; }
-        .team-copy small { font-size: 12px; font-weight: 600; opacity: .6; }
+        .team { margin: 22px 0 18px; padding: 16px; border: 1px solid var(--line);
+          border-radius: 18px; background: var(--surface-raised); }
+        .team-copy { justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
+        .team-copy strong { color: #172036; font-size: 19px; }
+        .team-copy small { color: var(--muted); font-size: 12px; font-weight: 600; }
         .meter { height: 9px; margin-top: 12px; border-radius: 99px;
           overflow: hidden; background: rgba(105, 92, 255, .12); }
         .meter i { display: block; width: var(--team-progress); height: 100%; border-radius: inherit;
           background: linear-gradient(90deg, #695cff, #24cf9e); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
         .lanes { display: grid; gap: 14px; }
         .lane-heading { justify-content: space-between; margin-bottom: 6px;
-          font-size: 12px; font-variant-numeric: tabular-nums; }
+          color: #344054; font-size: 12px; font-variant-numeric: tabular-nums; }
         .driver { gap: 8px; }
         .driver > span, .driver > img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
           display: grid; place-items: center; background: #695cff; color: white; font-size: 11px; font-weight: 800; }
@@ -300,12 +304,13 @@
           border-radius: 50%; background: #151923; }
         .wheel.one { left: 8px; } .wheel.two { right: 7px; }
         footer { justify-content: space-between; margin-top: 18px; padding-top: 14px;
-          border-top: 1px solid rgba(105, 92, 255, .12); font-size: 12px; opacity: .72; }
+          border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
         .live { display: flex; gap: 6px; align-items: center; }
         .live i { width: 7px; height: 7px; border-radius: 50%; background: #24cf9e;
           box-shadow: 0 0 0 4px rgba(36,207,158,.13); animation: pulse 1.8s ease-in-out infinite; }
         .error { margin: 10px 0 0; color: var(--error-color, #db4437); font-size: 11px; }
-        .empty { padding: 22px; text-align: center; opacity: .6; border: 1px dashed currentColor; border-radius: 14px; }
+        .empty { padding: 22px; color: var(--muted); text-align: center;
+          background: rgba(255, 255, 255, .5); border: 1px dashed #b8b2ee; border-radius: 14px; }
         @keyframes pulse { 50% { transform: scale(.6); opacity: .55; } }
         .reduced-motion *, .reduced-motion *::before, .reduced-motion *::after {
           animation-duration: .001ms !important; animation-iteration-count: 1 !important;
