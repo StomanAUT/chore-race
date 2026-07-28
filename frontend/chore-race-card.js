@@ -28,6 +28,17 @@
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
+  const errorMessage = (error) => {
+    if (error instanceof Error) return error.message;
+    if (typeof error === "string") return error;
+    return (
+      error?.message ??
+      error?.body?.message ??
+      error?.code ??
+      "Daten konnten noch nicht geladen werden"
+    );
+  };
+
   class ChoreRaceCard extends HTMLElement {
     constructor() {
       super();
@@ -61,7 +72,18 @@
     set hass(hass) {
       const firstConnection = !this._hass && hass;
       this._hass = hass;
-      if (firstConnection && this._connected) this._load();
+      if (firstConnection) {
+        this._data = {
+          state: {
+            open_tasks_today: 0,
+            completed_tasks_today: 0,
+            team_progress: { completed: 0, total: 0 },
+          },
+          leaderboard: [],
+        };
+        this._render();
+        if (this._connected) this._load();
+      }
     }
 
     getCardSize() {
@@ -121,7 +143,7 @@
         this._error = undefined;
       } catch (error) {
         if (!this._connected || generation !== this._requestGeneration) return;
-        this._error = error instanceof Error ? error.message : String(error);
+        this._error = errorMessage(error);
       }
       this._render();
     }
