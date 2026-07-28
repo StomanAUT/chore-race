@@ -44,6 +44,18 @@ target_points: 12
 refresh_interval: 30
 ```
 
+For the admin-only planner, also copy `chore-race-planner-card.js`, register it
+as a module resource, and add:
+
+```yaml
+type: custom:chore-race-planner-card
+title: Chore Race Planer
+```
+
+The planner guides an administrator through creating a participant, a reusable
+chore type, and then a dated task. Existing open tasks are listed below the
+forms.
+
 `refresh_interval` is clamped to 10-300 seconds. Set
 `force_reduced_motion: true` to disable animation regardless of the operating
 system preference.
