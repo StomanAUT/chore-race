@@ -830,10 +830,32 @@
               : ""
           }
           ${champion || scoreFeedback}
-          <section class="tasks" aria-label="Offene Race-Aufgaben">
-            ${taskCards}
-          </section>
-          <section class="lanes">${lanes}</section>
+          <div class="race-stage">
+            <section class="stage-panel lanes-panel" aria-label="Rennstrecke">
+              <div class="section-heading">
+                <div>
+                  <span>LIVE</span>
+                  <strong>Rennstrecke</strong>
+                </div>
+                <small>${racers.length} ${
+                  racers.length === 1 ? "Teilnehmer" : "Teilnehmer"
+                }</small>
+              </div>
+              <div class="lanes">${lanes}</div>
+            </section>
+            <section class="stage-panel tasks-panel" aria-label="Offene Race-Aufgaben">
+              <div class="section-heading">
+                <div>
+                  <span>HEUTE</span>
+                  <strong>Offene Aufgaben</strong>
+                </div>
+                <small>${openTasks.length} offen</small>
+              </div>
+              <div class="tasks">
+                ${taskCards}
+              </div>
+            </section>
+          </div>
           <footer>
             <span>${
               status === "legacy"
@@ -884,77 +906,101 @@
               var(--surface),
               color-mix(in srgb, var(--surface) 92%, var(--accent))
             );
-          border-radius: var(--ha-card-border-radius, 24px); padding: clamp(18px, 4vw, 28px);
+          border-radius: var(--ha-card-border-radius, 24px); padding: clamp(16px, 2.5vw, 24px);
           box-shadow: var(--ha-card-box-shadow, 0 18px 55px rgba(31, 38, 90, .12));
           font-family: var(--paper-font-body1_-_font-family, system-ui, sans-serif);
         }
         header, .team-copy, footer, .lane-heading, .driver { display: flex; align-items: center; }
         header { justify-content: space-between; gap: 16px; }
         .eyebrow { font-size: 11px; letter-spacing: .16em; font-weight: 800; color: var(--accent); }
-        h2 { margin: 4px 0 0; color: var(--ink); font-size: clamp(24px, 6vw, 34px);
+        h2 { margin: 3px 0 0; color: var(--ink); font-size: clamp(23px, 4vw, 31px);
           line-height: 1; letter-spacing: -.04em; }
-        .flag { position: relative; width: 48px; height: 48px; border-radius: 16px;
+        .flag { position: relative; width: 42px; height: 42px; border-radius: 14px;
           background: color-mix(in srgb, var(--accent) 16%, transparent); transform: rotate(4deg); }
-        .flag::before { content: ""; position: absolute; left: 14px; top: 9px;
-          width: 3px; height: 31px; border-radius: 3px; background: var(--accent); }
-        .flag i { position: absolute; left: 17px; top: 10px; width: 22px; height: 17px;
+        .flag::before { content: ""; position: absolute; left: 12px; top: 8px;
+          width: 3px; height: 27px; border-radius: 3px; background: var(--accent); }
+        .flag i { position: absolute; left: 15px; top: 9px; width: 20px; height: 15px;
           background: repeating-conic-gradient(#172036 0 25%, #fff 0 50%) 0 / 8px 8px;
           clip-path: polygon(0 0, 100% 0, 82% 50%, 100% 100%, 0 100%); }
-        .team { margin: 22px 0 18px; padding: 16px; border: 1px solid var(--line);
-          border-radius: 18px; background: var(--surface-raised); }
+        .team { margin: 14px 0 12px; padding: 11px 14px; border: 1px solid var(--line);
+          border-radius: 15px; background: var(--surface-raised); }
         .team-copy { justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
         .team-copy strong { color: var(--ink); font-size: 19px; }
         .team-copy small { color: var(--muted); font-size: 12px; font-weight: 600; }
-        .status-detail { display:block; margin-top:5px; color:var(--muted);
-          font-size:12px; }
+        .status-detail { display:block; margin-top:2px; color:var(--muted);
+          font-size:11px; }
         .race-summary .team-copy strong { font-variant-numeric: tabular-nums; }
         .meter { height: 9px; margin-top: 12px; border-radius: 99px;
           overflow: hidden; background: color-mix(in srgb, var(--accent) 14%, transparent); }
         .meter i { display: block; width: var(--team-progress); height: 100%; border-radius: inherit;
           background: linear-gradient(90deg, var(--accent), #54a995); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
-        .lanes { display: grid; gap: 14px; }
-        .tasks { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-          gap:14px; margin:0 0 20px; }
-        .task-card { min-width:0; overflow:hidden; border:1px solid var(--line);
-          border-radius:20px; background:var(--surface-raised); }
-        .task-image, .task-icon { width:100%; height:clamp(180px,28vw,280px);
+        .race-stage { display:grid; grid-template-columns:minmax(0,1.08fr) minmax(240px,.92fr);
+          gap:12px; align-items:start; }
+        .stage-panel { min-width:0; padding:13px; border:1px solid var(--line);
+          border-radius:18px; background:color-mix(in srgb,var(--surface-raised) 88%,transparent); }
+        .section-heading { display:flex; align-items:center; justify-content:space-between;
+          gap:10px; margin:0 1px 11px; }
+        .section-heading > div { display:flex; align-items:baseline; gap:8px; min-width:0; }
+        .section-heading span { color:var(--accent); font-size:9px; font-weight:850;
+          letter-spacing:.14em; }
+        .section-heading strong { overflow:hidden; color:var(--ink); font-size:14px;
+          text-overflow:ellipsis; white-space:nowrap; }
+        .section-heading small { flex:0 0 auto; color:var(--muted); font-size:10px; }
+        .lanes { display: grid; gap: 10px; }
+        .tasks { display:grid; grid-template-columns:1fr; gap:8px;
+          max-height:min(47vh,380px); overflow:auto; overscroll-behavior:contain;
+          scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+        .task-card { min-width:0; min-height:74px; display:grid;
+          grid-template-columns:72px minmax(0,1fr); overflow:hidden;
+          border:1px solid var(--line); border-radius:14px;
+          background:var(--surface-raised); }
+        .task-image, .task-icon { width:72px; height:100%; min-height:74px;
           object-fit:contain; }
-        .task-image { padding:10px;
+        .task-image { padding:6px;
           background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
         .task-icon { display:grid; place-items:center;
           color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--surface)); }
-        .task-icon ha-icon { --mdc-icon-size:clamp(52px,12vw,86px); }
-        .task-copy { display:flex; align-items:flex-end; justify-content:space-between;
-          gap:14px; padding:15px; }
-        .task-copy small, .picker-heading small { color:var(--accent); font-size:10px;
+        .task-icon ha-icon { --mdc-icon-size:34px; }
+        .task-copy { min-width:0; display:flex; align-items:center; justify-content:space-between;
+          gap:8px; padding:9px 10px; }
+        .task-copy > div { min-width:0; }
+        .task-copy small, .picker-heading small { color:var(--accent); font-size:8px;
           font-weight:800; letter-spacing:.12em; }
-        .task-copy h3, .picker h3 { margin:4px 0; color:var(--ink); font-size:19px; }
-        .task-copy span { color:var(--muted); font-size:12px; }
+        .task-copy h3 { overflow:hidden; margin:2px 0 3px; color:var(--ink);
+          font-size:14px; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; }
+        .picker h3 { margin:4px 0; color:var(--ink); font-size:19px; }
+        .task-copy span { display:block; overflow:hidden; color:var(--muted);
+          font-size:10px; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
         button { min-height:48px; border:0; border-radius:14px; padding:0 18px;
           font:inherit; font-weight:750; cursor:pointer; touch-action:manipulation; }
         button:focus-visible { outline:3px solid color-mix(in srgb,var(--accent) 45%,white);
           outline-offset:2px; }
         button:disabled { cursor:wait; opacity:.6; }
-        .complete { flex:0 0 auto; color:white; background:var(--accent); }
+        .complete { flex:0 0 auto; min-height:38px; padding:0 11px;
+          border-radius:11px; color:white; background:var(--accent); font-size:11px; }
         .race-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
-          gap:10px; margin:0 0 18px; }
-        .race-control { width:100%; min-height:52px; margin:0; }
-        .start-race { color:white; background:var(--accent); font-size:17px; }
-        .stop-race { min-height:48px; color:var(--muted);
+          gap:8px; margin:0 0 12px; }
+        .race-control { width:100%; min-height:44px; margin:0; }
+        .start-race { color:white; background:var(--accent); font-size:14px; }
+        .stop-race { min-height:44px; color:var(--muted);
           background:transparent; border:1px solid var(--line); font-size:13px; }
-        .reset-race { min-height:48px; color:var(--muted);
+        .reset-race { min-height:44px; color:var(--muted);
           background:color-mix(in srgb,var(--error-color,#db4437) 7%,transparent);
           border:1px solid color-mix(in srgb,var(--error-color,#db4437) 24%,var(--line));
           font-size:13px; }
         .race-action-error { margin:-6px 0 18px; }
-        .race-hint { max-width:145px; text-align:right; }
-        .score-feedback,.champion { display:grid; gap:3px; margin:0 0 18px;
-          padding:14px 16px; border:1px solid var(--line); border-radius:16px;
+        .race-hint { max-width:96px; text-align:right; font-size:9px !important;
+          white-space:normal !important; }
+        .score-feedback,.champion { display:grid; gap:2px; margin:0 0 12px;
+          padding:10px 13px; border:1px solid var(--line); border-radius:14px;
           background:color-mix(in srgb,var(--accent) 10%,var(--surface-raised)); }
+        .score-feedback { grid-template-columns:auto auto minmax(0,1fr);
+          align-items:center; gap:8px; padding-block:8px; }
+        .score-feedback small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .score-feedback span,.champion span { color:var(--accent); font-size:10px;
           font-weight:850; letter-spacing:.12em; }
-        .score-feedback strong,.champion strong { color:var(--ink); font-size:18px; }
-        .score-feedback small,.champion small { color:var(--muted); font-size:12px; }
+        .score-feedback strong,.champion strong { color:var(--ink); font-size:16px; }
+        .score-feedback small,.champion small { color:var(--muted); font-size:10px; }
         .champion { text-align:center; background:
           radial-gradient(circle at 50% 0%,rgba(255,193,7,.2),transparent 66%),
           var(--surface-raised); }
@@ -1006,8 +1052,8 @@
         .action-status, .action-error { margin:14px 0 0; text-align:center; font-size:13px; }
         .action-status { color:var(--muted); }
         .action-error { color:var(--error-color,#db4437); }
-        .lane-heading { justify-content: space-between; margin-bottom: 6px;
-          color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
+        .lane-heading { justify-content: space-between; margin-bottom: 4px;
+          color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; }
         .lane-heading small { color:var(--muted); font-size:10px; font-weight:600; }
         .driver { gap: 8px; }
         .remove-racer { min-width:26px; min-height:26px; padding:0;
@@ -1017,29 +1063,29 @@
           border-color:color-mix(in srgb,var(--error-color,#db4437) 38%,var(--line)); }
         .driver > span, .driver > img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
           display: grid; place-items: center; background: var(--accent); color: white; font-size: 11px; font-weight: 800; }
-        .track { position: relative; height: 45px; overflow: hidden; border-radius: 13px;
+        .track { position: relative; height: 38px; overflow: hidden; border-radius: 11px;
           background: linear-gradient(180deg, #3b4050, #272b38); box-shadow: inset 0 2px 7px rgba(0,0,0,.28); }
-        .track-lines { position: absolute; inset: 21px 12px auto; height: 2px;
+        .track-lines { position: absolute; inset: 18px 12px auto; height: 2px;
           background: repeating-linear-gradient(90deg, rgba(255,255,255,.55) 0 12px, transparent 12px 24px); }
         .finish { position: absolute; right: 9px; inset-block: 0; width: 8px; opacity: .75;
           background: repeating-conic-gradient(#fff 0 25%, #151923 0 50%) 0 / 8px 8px; }
-        .racer { position: absolute; z-index: 2; inset: 7px auto auto 5px; width: calc(100% - 61px);
+        .racer { position: absolute; z-index: 2; inset: 7px auto auto 5px; width: calc(100% - 55px);
           transform: translateX(var(--race-shift)); transition: transform .85s cubic-bezier(.16, 1, .3, 1); }
-        .car { position: relative; width: 50px; height: 25px; border-radius: 9px 13px 7px 7px;
+        .car { position: relative; width: 44px; height: 21px; border-radius: 8px 12px 6px 6px;
           background: linear-gradient(
             145deg,
             hsl(calc(215 + var(--lane) * 42) 52% 62%),
             hsl(calc(215 + var(--lane) * 42) 48% 46%)
           );
           filter: drop-shadow(0 4px 3px rgba(0,0,0,.3)); }
-        .car::before { content: ""; position: absolute; left: 12px; top: -7px; width: 25px; height: 11px;
+        .car::before { content: ""; position: absolute; left: 11px; top: -6px; width: 22px; height: 9px;
           border-radius: 10px 11px 0 0; background: inherit; }
-        .window { position: absolute; z-index: 1; left: 20px; top: -4px; width: 14px; height: 7px;
+        .window { position: absolute; z-index: 1; left: 18px; top: -3px; width: 12px; height: 6px;
           border-radius: 7px 7px 2px 2px; background: #dff7ff; opacity: .9; }
         .wheel { position: absolute; bottom: -4px; width: 9px; height: 9px; border: 2px solid #aeb5c7;
           border-radius: 50%; background: #151923; }
         .wheel.one { left: 8px; } .wheel.two { right: 7px; }
-        footer { justify-content: space-between; margin-top: 18px; padding-top: 14px;
+        footer { justify-content: space-between; margin-top: 12px; padding-top: 10px;
           border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
         .live { display: flex; gap: 6px; align-items: center; }
         .live i { width: 7px; height: 7px; border-radius: 50%; background: #24cf9e;
@@ -1058,9 +1104,27 @@
           *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
             scroll-behavior: auto !important; transition-duration: .001ms !important; }
         }
+        @container (max-width: 620px) {
+          .race-stage { grid-template-columns:minmax(0,1fr) minmax(220px,.9fr); gap:8px; }
+          .stage-panel { padding:10px; border-radius:15px; }
+          .section-heading { margin-bottom:8px; }
+          .task-card { min-height:64px; grid-template-columns:56px minmax(0,1fr); }
+          .task-image, .task-icon { width:56px; min-height:64px; }
+          .task-copy { gap:6px; padding:7px 8px; }
+          .task-copy h3 { font-size:12px; }
+          .task-copy span { font-size:9px; }
+          .complete { min-height:34px; padding-inline:8px; font-size:10px; }
+        }
+        @container (max-width: 460px) {
+          .race-stage { grid-template-columns:1fr; }
+          .tasks { grid-template-columns:repeat(2,minmax(0,1fr));
+            max-height:none; overflow:visible; }
+          .score-feedback { grid-template-columns:1fr; gap:2px; }
+          .score-feedback small { white-space:normal; }
+        }
         @container (max-width: 420px) {
           ha-card { padding: 16px; border-radius: 20px; }
-          .team { margin-top: 18px; } .track { height: 42px; }
+          .team { margin-top: 14px; }
           header { align-items: flex-start; }
           h2 { overflow-wrap: anywhere; }
           .team-copy { gap: 8px; }
@@ -1069,8 +1133,8 @@
           .driver strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .tasks { grid-template-columns:1fr; }
           .race-controls { grid-template-columns:1fr; }
-          .task-copy { align-items:stretch; flex-direction:column; }
-          .complete { width:100%; }
+          .task-card { grid-template-columns:64px minmax(0,1fr); }
+          .task-image, .task-icon { width:64px; }
           .race-hint { max-width:none; text-align:left; }
           .participant-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
         }
