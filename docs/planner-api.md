@@ -99,8 +99,9 @@ Race lifecycle mutations are admin-only:
 ```
 
 Only untouched open tasks can be updated or deleted. Tasks with completion
-history remain immutable, including after an undo. Tasks scheduled for today
-are also locked while a race is running.
+history remain immutable, including after an undo. Untouched open tasks remain
+editable during a running race, and the live race queue reflects changes
+immediately.
 
 Chore types can be updated through `chore_race/update_chore_type`. Permanent
 deletion through `chore_race/delete_chore_type` is allowed only when no task or

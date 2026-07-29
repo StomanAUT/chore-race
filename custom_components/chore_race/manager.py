@@ -935,7 +935,7 @@ class ChoreRaceManager:
         return task
 
     def _ensure_task_mutable(self, task: ChoreTask) -> None:
-        """Reject edits that could rewrite completion or live-race history."""
+        """Reject edits that could rewrite completion history."""
         if task.status is not TaskStatus.OPEN:
             raise ConflictError("Only open tasks can be changed")
         if any(
@@ -943,8 +943,6 @@ class ChoreRaceManager:
             for completion in self._data.completions.values()
         ):
             raise ConflictError("Tasks with completion history cannot be changed")
-        if task.date == self.today() and self._active_race() is not None:
-            raise ConflictError("Today's tasks cannot be changed during a race")
 
     def _active_completion_for_task(self, task_id: str) -> Completion | None:
         return next(

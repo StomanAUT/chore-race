@@ -83,14 +83,21 @@ async def test_task_with_completion_history_cannot_be_changed(manager):
         await manager.async_delete_task(task.id)
 
 
-async def test_today_task_is_locked_during_running_race(manager):
-    _, _, task = await _base_records(manager)
+async def test_untouched_open_tasks_can_change_during_running_race(manager):
+    _, chore_type, task = await _base_records(manager)
     await manager.async_start_race()
 
-    with pytest.raises(ConflictError):
-        await manager.async_update_task(task.id, race_points=9)
-    with pytest.raises(ConflictError):
-        await manager.async_delete_task(task.id)
+    updated = await manager.async_update_task(task.id, race_points=9)
+    assert updated.race_points == 9
+    assert manager.race_state()["current_task"]["race_points"] == 9
+
+    second = await manager.async_create_task(chore_type.id, manager.today())
+    await manager.async_delete_task(second.id)
+    assert second.id not in manager.data.tasks
+    assert all(
+        item["id"] != second.id
+        for item in manager.race_state()["open_tasks"]
+    )
 
 
 async def test_only_unused_chore_types_can_be_deleted(manager):
