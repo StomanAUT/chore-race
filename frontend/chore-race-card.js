@@ -936,12 +936,12 @@
           background: linear-gradient(90deg, var(--accent), #54a995); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
         .race-stage { display:grid; grid-template-columns:minmax(0,1.08fr) minmax(240px,.92fr);
           gap:12px; align-items:start; }
-        .stage-panel { min-width:0; padding:13px; border:1px solid var(--line);
-          border-radius:18px; background:color-mix(in srgb,var(--surface-raised) 88%,transparent); }
+        .stage-panel { min-width:0; padding:12px; border:1px solid var(--line);
+          border-radius:16px; background:color-mix(in srgb,var(--surface-raised) 55%,transparent); }
         .section-heading { display:flex; align-items:center; justify-content:space-between;
           gap:10px; margin:0 1px 11px; }
         .section-heading > div { display:flex; align-items:baseline; gap:8px; min-width:0; }
-        .section-heading span { color:var(--accent); font-size:9px; font-weight:850;
+        .section-heading span { color:var(--muted); font-size:9px; font-weight:800;
           letter-spacing:.14em; }
         .section-heading strong { overflow:hidden; color:var(--ink); font-size:14px;
           text-overflow:ellipsis; white-space:nowrap; }
@@ -950,11 +950,11 @@
         .tasks { display:grid; grid-template-columns:1fr; gap:8px;
           max-height:min(47vh,380px); overflow:auto; overscroll-behavior:contain;
           scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
-        .task-card { min-width:0; min-height:74px; display:grid;
-          grid-template-columns:72px minmax(0,1fr); overflow:hidden;
-          border:1px solid var(--line); border-radius:14px;
-          background:var(--surface-raised); }
-        .task-image, .task-icon { width:72px; height:100%; min-height:74px;
+        .task-card { min-width:0; min-height:62px; display:grid;
+          grid-template-columns:52px minmax(0,1fr); overflow:hidden;
+          border:1px solid var(--line); border-radius:12px;
+          background:color-mix(in srgb,var(--surface-raised) 72%,var(--surface)); }
+        .task-image, .task-icon { width:52px; height:100%; min-height:62px;
           object-fit:contain; }
         .task-image { padding:6px;
           background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
@@ -962,7 +962,7 @@
           color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--surface)); }
         .task-icon ha-icon { --mdc-icon-size:34px; }
         .task-copy { min-width:0; display:flex; align-items:center; justify-content:space-between;
-          gap:8px; padding:9px 10px; }
+          gap:7px; padding:7px 9px; }
         .task-copy > div { min-width:0; }
         .task-copy small, .picker-heading small { color:var(--accent); font-size:8px;
           font-weight:800; letter-spacing:.12em; }
@@ -981,7 +981,10 @@
         .race-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
           gap:8px; margin:0 0 12px; }
         .race-control { width:100%; min-height:44px; margin:0; }
-        .start-race { color:white; background:var(--accent); font-size:14px; }
+        .start-race { color:var(--ink);
+          background:color-mix(in srgb,var(--accent) 18%,var(--surface-raised));
+          border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
+          font-size:14px; }
         .stop-race { min-height:44px; color:var(--muted);
           background:transparent; border:1px solid var(--line); font-size:13px; }
         .reset-race { min-height:44px; color:var(--muted);
@@ -1108,8 +1111,8 @@
           .race-stage { grid-template-columns:minmax(0,1fr) minmax(220px,.9fr); gap:8px; }
           .stage-panel { padding:10px; border-radius:15px; }
           .section-heading { margin-bottom:8px; }
-          .task-card { min-height:64px; grid-template-columns:56px minmax(0,1fr); }
-          .task-image, .task-icon { width:56px; min-height:64px; }
+          .task-card { min-height:58px; grid-template-columns:48px minmax(0,1fr); }
+          .task-image, .task-icon { width:48px; min-height:58px; }
           .task-copy { gap:6px; padding:7px 8px; }
           .task-copy h3 { font-size:12px; }
           .task-copy span { font-size:9px; }
@@ -1133,8 +1136,8 @@
           .driver strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .tasks { grid-template-columns:1fr; }
           .race-controls { grid-template-columns:1fr; }
-          .task-card { grid-template-columns:64px minmax(0,1fr); }
-          .task-image, .task-icon { width:64px; }
+          .task-card { grid-template-columns:48px minmax(0,1fr); }
+          .task-image, .task-icon { width:48px; }
           .race-hint { max-width:none; text-align:left; }
           .participant-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
         }
