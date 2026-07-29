@@ -19,6 +19,55 @@
     return date.toISOString().slice(0, 10);
   };
 
+  class ChoreRacePlannerCardEditor extends HTMLElement {
+    setConfig(config) {
+      this._config = { ...config };
+      this._render();
+    }
+
+    connectedCallback() {
+      this._render();
+    }
+
+    _render() {
+      if (!this.isConnected) return;
+      this.innerHTML = `
+        <style>
+          .editor { display:grid; gap:14px; padding:8px 0; }
+          label { display:grid; gap:6px; color:var(--secondary-text-color);
+            font-size:12px; font-weight:600; }
+          input { min-height:42px; box-sizing:border-box; padding:8px 11px;
+            color:var(--primary-text-color); background:var(--card-background-color);
+            border:1px solid var(--divider-color); border-radius:10px; font:inherit; }
+        </style>
+        <div class="editor">
+          <label>Maximale Breite (Pixel)
+            <input name="max_width" type="number" min="280" max="1400"
+              value="${escapeHtml(this._config?.max_width ?? 960)}">
+          </label>
+          <label>Akzentfarbe
+            <input name="accent_color" type="color"
+              value="${escapeHtml(this._config?.accent_color ?? "#74829a")}">
+          </label>
+        </div>`;
+      this.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("change", () => {
+          const config = { ...this._config };
+          config[input.name] =
+            input.type === "number" ? Number(input.value) : input.value;
+          this._config = config;
+          this.dispatchEvent(
+            new CustomEvent("config-changed", {
+              detail: { config },
+              bubbles: true,
+              composed: true,
+            }),
+          );
+        });
+      });
+    }
+  }
+
   class ChoreRacePlannerCard extends HTMLElement {
     constructor() {
       super();
@@ -34,6 +83,10 @@
 
     static getStubConfig() {
       return { title: "Chore Race Planer", max_width: 960 };
+    }
+
+    static getConfigElement() {
+      return document.createElement("chore-race-planner-card-editor");
     }
 
     setConfig(config) {
@@ -169,6 +222,40 @@
             ?.setAttribute("icon", event.currentTarget.value);
         });
 
+      const schedule = this.shadowRoot.querySelector('[name="schedule"]');
+      const updateScheduleFields = () => {
+        const recurring = schedule?.value !== "once";
+        const intervalField = this.shadowRoot.querySelector(
+          '[data-field="interval"]',
+        );
+        const dateLabel = this.shadowRoot.querySelector('[data-label="date"]');
+        const preview = this.shadowRoot.querySelector("[data-schedule-preview]");
+        if (intervalField) intervalField.hidden = schedule?.value !== "days";
+        if (dateLabel) {
+          dateLabel.firstChild.textContent = recurring ? "Startdatum" : "Datum";
+        }
+        if (preview) {
+          const date = this.shadowRoot.querySelector('[name="date"]')?.value;
+          const interval =
+            this.shadowRoot.querySelector('[name="interval"]')?.value || "2";
+          const descriptions = {
+            once: `Einmalig am ${date || "gewählten Tag"}`,
+            days: `Alle ${interval} Tage ab ${date || "dem Startdatum"}`,
+            monthly: `Jeden Monat ab ${date || "dem Startdatum"}`,
+            yearly: `Jedes Jahr ab ${date || "dem Startdatum"}`,
+          };
+          preview.textContent = descriptions[schedule?.value ?? "once"];
+        }
+      };
+      schedule?.addEventListener("change", updateScheduleFields);
+      this.shadowRoot
+        .querySelector('[name="date"]')
+        ?.addEventListener("change", updateScheduleFields);
+      this.shadowRoot
+        .querySelector('[name="interval"]')
+        ?.addEventListener("input", updateScheduleFields);
+      updateScheduleFields();
+
       this.shadowRoot
         .querySelector('[data-form="task"]')
         ?.addEventListener("submit", (event) => {
@@ -303,7 +390,7 @@
             .map(escapeHtml)
             .join(" · ");
           return `<li>
-            <span class="task-icon">${escapeHtml(chore?.icon || "✓")}</span>
+            <span class="task-icon"><ha-icon icon="${escapeHtml(chore?.icon || "mdi:check")}"></ha-icon></span>
             <span><strong>${escapeHtml(chore?.name || "Aufgabe")}</strong>
               <small>${details}</small></span>
           </li>`;
@@ -385,7 +472,7 @@
                 <option value="">Bitte wählen</option>${this._choreOptions()}
               </select></label>
               <div class="row">
-                <label>Datum<input required type="date" name="date" value="${today()}"></label>
+                <label data-label="date">Datum<input required type="date" name="date" value="${today()}"></label>
                 <label>Raum<select name="area_id"><option value="">Ohne Raum</option>
                   ${this._areaOptions()}</select></label>
               </div>
@@ -399,9 +486,10 @@
                   <option value="monthly">Einmal pro Monat</option>
                   <option value="yearly">Einmal pro Jahr</option>
                 </select></label>
-                <label>Intervall in Tagen<input type="number" name="interval"
+                <label data-field="interval">Intervall in Tagen<input type="number" name="interval"
                   min="1" max="365" value="2"></label>
               </div>
+              <p class="schedule-preview" data-schedule-preview></p>
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
             </form>
           </div>
@@ -413,13 +501,14 @@
     _styles() {
       const maxWidth = Math.min(
         1400,
-        Math.max(360, Number(this._config.max_width) || 960),
+        Math.max(280, Number(this._config.max_width) || 960),
       );
       const accent = /^#[0-9a-f]{6}$/i.test(this._config.accent_color)
         ? this._config.accent_color
         : "#74829a";
       return `
-        :host { display:block; --ink:var(--primary-text-color,#172036);
+        :host { display:block; min-width:0; container-type:inline-size;
+          --ink:var(--primary-text-color,#172036);
           width:min(100%,${maxWidth}px); margin-inline:auto;
           --muted:var(--secondary-text-color,#667085); --accent:${accent};
           --surface:var(--ha-card-background,var(--card-background-color,#fbfbff));
@@ -464,9 +553,14 @@
         .icon-preview ha-icon,.task-icon ha-icon { width:20px; height:20px; }
         .loading,.notice,.error { margin:14px 0 0; padding:10px 12px; border-radius:10px;
           font-size:13px; }
-        .loading { color:#4338ca; background:#eeecff; }
-        .notice { color:#08775c; background:#ddfbf1; }
-        .error { color:#a61b1b; background:#fee9e7; }
+        .loading { color:var(--primary-text-color);
+          background:color-mix(in srgb,var(--info-color,#3b82f6) 14%,var(--surface)); }
+        .notice { color:var(--primary-text-color);
+          background:color-mix(in srgb,var(--success-color,#22a06b) 14%,var(--surface)); }
+        .error { color:var(--primary-text-color);
+          background:color-mix(in srgb,var(--error-color,#db4437) 14%,var(--surface)); }
+        .schedule-preview { margin:4px 0 10px; color:var(--muted); font-size:12px; }
+        [hidden] { display:none !important; }
         .tasks,.types { margin-top:14px; }
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
@@ -476,12 +570,24 @@
         .task-icon { display:grid; place-items:center; flex:0 0 32px; height:32px;
           color:#fff; background:var(--accent); border-radius:10px; }
         .empty { margin:0; padding:14px; color:var(--muted); text-align:center; }
-        @media (max-width:520px) { .row,ul { grid-template-columns:1fr; } }
+        @container (max-width:520px) {
+          .row,ul { grid-template-columns:1fr; }
+          ha-card { padding:16px; border-radius:18px; }
+          header { align-items:flex-start; }
+          h2 { overflow-wrap:anywhere; }
+          form,.tasks,.types { padding:13px; }
+        }
       `;
     }
   }
 
   if (!customElements.get("chore-race-planner-card")) {
+    if (!customElements.get("chore-race-planner-card-editor")) {
+      customElements.define(
+        "chore-race-planner-card-editor",
+        ChoreRacePlannerCardEditor,
+      );
+    }
     customElements.define("chore-race-planner-card", ChoreRacePlannerCard);
     window.customCards = window.customCards || [];
     window.customCards.push({

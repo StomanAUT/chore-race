@@ -62,9 +62,9 @@ every N days, monthly, and yearly patterns. Existing chore types and open tasks
 are listed below the forms. The icon picker provides a curated visual selection
 without requiring Material Design Icon names.
 
-Both cards accept a `max_width` between 360 and 1400 pixels and an optional
-six-digit hexadecimal `accent_color`. They always shrink to the available
-mobile width.
+Both cards expose `max_width` and `accent_color` in Home Assistant's visual
+card editor. `max_width` accepts 280 to 1400 pixels; the cards also shrink to
+the available dashboard column width.
 
 `refresh_interval` is clamped to 10-300 seconds. Set
 `force_reduced_motion: true` to disable animation regardless of the operating

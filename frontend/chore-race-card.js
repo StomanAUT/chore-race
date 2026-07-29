@@ -39,6 +39,55 @@
     );
   };
 
+  class ChoreRaceCardEditor extends HTMLElement {
+    setConfig(config) {
+      this._config = { ...config };
+      this._render();
+    }
+
+    connectedCallback() {
+      this._render();
+    }
+
+    _render() {
+      if (!this.isConnected) return;
+      this.innerHTML = `
+        <style>
+          .editor { display:grid; gap:14px; padding:8px 0; }
+          label { display:grid; gap:6px; color:var(--secondary-text-color);
+            font-size:12px; font-weight:600; }
+          input { min-height:42px; box-sizing:border-box; padding:8px 11px;
+            color:var(--primary-text-color); background:var(--card-background-color);
+            border:1px solid var(--divider-color); border-radius:10px; font:inherit; }
+        </style>
+        <div class="editor">
+          <label>Maximale Breite (Pixel)
+            <input name="max_width" type="number" min="280" max="1400"
+              value="${escapeHtml(this._config?.max_width ?? 820)}">
+          </label>
+          <label>Akzentfarbe
+            <input name="accent_color" type="color"
+              value="${escapeHtml(this._config?.accent_color ?? "#74829a")}">
+          </label>
+        </div>`;
+      this.querySelectorAll("input").forEach((input) => {
+        input.addEventListener("change", () => {
+          const config = { ...this._config };
+          config[input.name] =
+            input.type === "number" ? Number(input.value) : input.value;
+          this._config = config;
+          this.dispatchEvent(
+            new CustomEvent("config-changed", {
+              detail: { config },
+              bubbles: true,
+              composed: true,
+            }),
+          );
+        });
+      });
+    }
+  }
+
   class ChoreRaceCard extends HTMLElement {
     constructor() {
       super();
@@ -58,6 +107,10 @@
 
     static getStubConfig() {
       return { title: "Chore Race", target_points: 10, max_width: 820 };
+    }
+
+    static getConfigElement() {
+      return document.createElement("chore-race-card-editor");
     }
 
     setConfig(config) {
@@ -231,13 +284,15 @@
     }
 
     _styles() {
-      const maxWidth = clamp(Number(this._config.max_width) || 820, 360, 1400);
+      const maxWidth = clamp(Number(this._config.max_width) || 820, 280, 1400);
       const accent = /^#[0-9a-f]{6}$/i.test(this._config.accent_color)
         ? this._config.accent_color
         : "#74829a";
       return `
         :host {
           display: block;
+          min-width: 0;
+          container-type: inline-size;
           width: min(100%, ${maxWidth}px);
           margin-inline: auto;
           --ink: var(--primary-text-color, #172036);
@@ -327,15 +382,24 @@
           *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important;
             scroll-behavior: auto !important; transition-duration: .001ms !important; }
         }
-        @media (max-width: 420px) {
+        @container (max-width: 420px) {
           ha-card { padding: 16px; border-radius: 20px; }
           .team { margin-top: 18px; } .track { height: 42px; }
+          header { align-items: flex-start; }
+          h2 { overflow-wrap: anywhere; }
+          .team-copy { gap: 8px; }
+          .lane-heading { gap: 8px; }
+          .driver { min-width: 0; }
+          .driver strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         }
       `;
     }
   }
 
   if (!customElements.get("chore-race-card")) {
+    if (!customElements.get("chore-race-card-editor")) {
+      customElements.define("chore-race-card-editor", ChoreRaceCardEditor);
+    }
     customElements.define("chore-race-card", ChoreRaceCard);
     window.customCards = window.customCards || [];
     window.customCards.push({

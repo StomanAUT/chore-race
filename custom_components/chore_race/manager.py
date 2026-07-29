@@ -244,7 +244,9 @@ class ChoreRaceManager:
                     for day in weekdays
                 )
             ):
-                raise ValidationError("race_weekdays must contain weekdays 0 through 6")
+                raise ValidationError(
+                    "race_weekdays must contain weekdays 0 through 6"
+                )
             changes["race_weekdays"] = sorted(set(weekdays))
         if "race_ready_time" in changes:
             ready_time = changes["race_ready_time"]
