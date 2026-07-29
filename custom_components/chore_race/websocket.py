@@ -242,6 +242,35 @@ async def websocket_remove_race_participant(
 @websocket_api.async_response
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "chore_race/complete_task",
+        vol.Required("task_id"): vol.All(str, vol.Length(min=1, max=64)),
+        vol.Required("participant_id"): vol.All(str, vol.Length(min=1, max=64)),
+    }
+)
+async def websocket_complete_task(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Complete one task with the normal everyday score."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    try:
+        await manager.async_complete_task(
+            msg["task_id"],
+            msg["participant_id"],
+        )
+    except ChoreRaceError as err:
+        connection.send_error(msg["id"], "chore_race_error", str(err))
+        return
+    connection.send_result(msg["id"], manager.race_state())
+
+
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "chore_race/complete_race_task",
         vol.Required("task_id"): vol.All(str, vol.Length(min=1, max=64)),
         vol.Required("participant_id"): vol.All(str, vol.Length(min=1, max=64)),
@@ -288,6 +317,7 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         websocket_stop_race,
         websocket_reset_race,
         websocket_remove_race_participant,
+        websocket_complete_task,
         websocket_complete_race_task,
     ):
         websocket_api.async_register_command(hass, command)

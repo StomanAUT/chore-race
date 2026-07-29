@@ -38,3 +38,17 @@ def test_planner_mutations_use_registered_websocket_commands():
 
     assert 'callService("chore_race"' not in frontend
     assert mutations <= set(_websocket_commands())
+
+
+def test_race_card_uses_registered_completion_commands():
+    """Support both everyday and active-race task completion."""
+    frontend = (ROOT / "frontend/chore-race-card.js").read_text(encoding="utf-8")
+    completion_commands = {
+        "complete_task",
+        "complete_race_task",
+    }
+
+    assert {
+        f'chore_race/{command}' for command in completion_commands
+    } <= set(re.findall(r'"(chore_race/[^"]+)"', frontend))
+    assert completion_commands <= set(_websocket_commands())

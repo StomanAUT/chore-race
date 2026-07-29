@@ -239,15 +239,12 @@
           const participantById = Object.fromEntries(
             participants.map((participant) => [participant.id, participant]),
           );
-          const raceParticipantIds = new Set(
-            raceState.participant_ids ??
-              participants
-                .filter((participant) => participant.active)
-                .map((participant) => participant.id),
-          );
+          const raceRunning = raceState.status === "running";
+          const raceParticipantIds = new Set(raceState.participant_ids ?? []);
           this._participants = participants.filter(
             (participant) =>
-              participant.active && raceParticipantIds.has(participant.id),
+              participant.active &&
+              (!raceRunning || raceParticipantIds.has(participant.id)),
           );
           this._areas = Object.fromEntries(
             places
@@ -323,28 +320,30 @@
       this._render();
     }
 
-    async _completeRaceTask() {
+    async _completeTask() {
       if (
         !this._hass?.callWS ||
         !this._selectedTaskId ||
         !this._selectedParticipantId ||
-        this._actionBusy ||
-        this._data?.raceState?.status !== "running"
+        this._actionBusy
       ) {
         return;
       }
+      const running = this._data?.raceState?.status === "running";
       this._actionBusy = true;
       this._actionError = undefined;
       this._render();
       try {
         const raceState = await this._hass.callWS({
-          type: "chore_race/complete_race_task",
+          type: running
+            ? "chore_race/complete_race_task"
+            : "chore_race/complete_task",
           task_id: this._selectedTaskId,
           participant_id: this._selectedParticipantId,
-          ...(this._selectedCopilotId
+          ...(running && this._selectedCopilotId
             ? { copilot_participant_id: this._selectedCopilotId }
             : {}),
-          fair_play: this._fairPlay,
+          ...(running ? { fair_play: this._fairPlay } : {}),
         });
         this._selectedTaskId = undefined;
         this._selectedParticipantId = undefined;
@@ -416,7 +415,6 @@
         });
       this.shadowRoot.querySelectorAll("[data-complete-task]").forEach((button) => {
         button.addEventListener("click", () => {
-          if (this._data?.raceState?.status !== "running") return;
           this._selectedTaskId = button.dataset.completeTask;
           this._selectedParticipantId = undefined;
           this._selectedCopilotId = undefined;
@@ -453,7 +451,7 @@
       );
       this.shadowRoot.querySelector("[data-confirm-completion]")?.addEventListener(
         "click",
-        () => this._completeRaceTask(),
+        () => this._completeTask(),
       );
       this.shadowRoot.querySelector("[data-close-picker]")?.addEventListener(
         "click",
@@ -635,16 +633,8 @@
                           : ""
                       }</span>
                     </div>
-                    ${
-                      running
-                        ? `<button class="complete" data-complete-task="${escapeHtml(task.id)}"
-                            ${this._actionBusy ? "disabled" : ""}>Erledigt</button>`
-                        : `<span class="race-hint">${
-                            status === "ready"
-                              ? "Abschluss nach Rennstart möglich"
-                              : "Rennen ist beendet"
-                          }</span>`
-                    }
+                    <button class="complete" data-complete-task="${escapeHtml(task.id)}"
+                      ${this._actionBusy ? "disabled" : ""}>Erledigt</button>
                   </div>
                 </article>`;
             })
@@ -659,8 +649,10 @@
             <section class="picker" role="dialog" aria-modal="true"
               aria-labelledby="race-picker-title">
               <div class="picker-heading">
-                <div><small>AUFGABE ERLEDIGT</small>
-                  <h3 id="race-picker-title">Punkte vergeben</h3></div>
+                <div><small>${running ? "RENNWERTUNG" : "ALLTAGSWERTUNG"}</small>
+                  <h3 id="race-picker-title">${
+                    running ? "Rennpunkte vergeben" : "Aufgabe erledigen"
+                  }</h3></div>
                 <button class="close" data-close-picker aria-label="Schließen"
                   ${this._actionBusy ? "disabled" : ""}>×</button>
               </div>
@@ -693,7 +685,7 @@
                   : `<p>Keine aktiven Teilnehmer verfügbar.</p>`}
               </div>
               ${
-                selectedParticipant
+                selectedParticipant && running
                   ? `<div class="bonus-panel">
                       <p class="picker-step"><strong>2</strong> Optionaler Team-Bonus</p>
                       <label>Copilot
@@ -733,6 +725,16 @@
                       ${this._actionBusy ? "disabled" : ""}>
                       ${this._actionBusy ? "Punkte werden gespeichert …" : "Abschluss bestätigen"}
                     </button>`
+                  : selectedParticipant
+                    ? `<div class="normal-score-note">
+                        <strong>Normale Alltagswertung</strong>
+                        <span>Ohne laufendes Rennen gibt es den Alltagspunkt.
+                          Renn-, Copilot-, Fair-Play- und Serienboni bleiben aus.</span>
+                      </div>
+                      <button class="confirm-completion" data-confirm-completion
+                        ${this._actionBusy ? "disabled" : ""}>
+                        ${this._actionBusy ? "Punkt wird gespeichert …" : "Als erledigt markieren"}
+                      </button>`
                   : ""
               }
               ${this._actionBusy ? `<p class="action-status">Punkte werden gespeichert …</p>` : ""}
@@ -1037,6 +1039,10 @@
           color:var(--ink); border:1px solid var(--line); border-radius:8px;
           background:color-mix(in srgb,var(--accent) 16%,var(--surface)); }
         .bonus-panel { margin-top:18px; padding-top:4px; border-top:1px solid var(--line); }
+        .normal-score-note { display:grid; gap:4px; margin-top:18px; padding:12px 14px;
+          border:1px solid var(--line); border-radius:14px; background:var(--surface-soft);
+          color:var(--muted); font-size:12px; line-height:1.45; }
+        .normal-score-note strong { color:var(--ink); font-size:13px; }
         .bonus-panel label { display:grid; gap:6px; margin:10px 0; color:var(--muted);
           font-size:12px; font-weight:750; }
         .bonus-panel select { width:100%; min-height:46px; padding:8px 10px;
