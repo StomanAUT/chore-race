@@ -13,7 +13,7 @@
     error?.code ??
     "Die Änderung konnte nicht gespeichert werden.";
 
-  const TASK_IMAGE_BASE = "/chore-race-assets";
+  const TASK_IMAGE_BASE = "/local/chore-race-icons";
   const TASK_IMAGES = [
     ["tidy-up", "Aufräumen", "tidy-up.png", "mdi:package-variant"],
     ["mop-floor", "Boden wischen", "mop-floor.png", "mdi:broom"],
@@ -577,6 +577,8 @@
                 <small>${item.default_race_points} Punkte · ${item.active ? "Aktiv" : "Inaktiv"}${
                   item.adult_only ? " · Nur Erwachsene" : ""
                 }${item.confirmation_required ? " · Bestätigung" : ""}</small>
+                <span class="edit-hint"><ha-icon icon="mdi:pencil"></ha-icon>
+                  Bearbeiten</span>
               </summary>
               <form class="compact-form" data-edit-chore="${escapeHtml(item.id)}">
                 <label>Name<input name="name" required maxlength="100"
@@ -591,10 +593,11 @@
                     icon="${escapeHtml(item.icon || "mdi:check")}"></ha-icon></span>
                   <select name="icon">${this._iconOptions(item.icon || "mdi:check")}</select>
                 </div></label>
-                <fieldset class="image-picker compact-picker">
-                  <legend>Aufgabenbild</legend>
+                <details class="image-picker compact-picker">
+                  <summary><strong>Aufgabenbild ändern</strong>
+                    <small>10 Motive oder nur das MDI-Symbol</small></summary>
                   <div>${this._taskImagePicker(item.image, true)}</div>
-                </fieldset>
+                </details>
                 <label class="check"><input name="adult_only" type="checkbox"
                   ${item.adult_only ? "checked" : ""}> Nur Erwachsene</label>
                 <label class="check"><input name="confirmation_required" type="checkbox"
@@ -676,6 +679,8 @@
             <details>
               <summary><strong>${escapeHtml(chore?.name || "Aufgabe")}</strong>
                 <small>${details}${task.blocked ? " · Blockiert" : ""}</small>
+                <span class="edit-hint"><ha-icon icon="mdi:pencil"></ha-icon>
+                  Bearbeiten</span>
               </summary>
               <form class="compact-form" data-edit-task="${escapeHtml(task.id)}">
                 <label>Aufgabentyp<select required name="chore_type_id">
@@ -718,16 +723,24 @@
 
     _choreVisual(chore) {
       if (chore?.image) {
-        return `<img src="${escapeHtml(chore.image)}" alt="">`;
+        const image = chore.image.replace(
+          /^\/chore-race-assets\//,
+          `${TASK_IMAGE_BASE}/`,
+        );
+        return `<img src="${escapeHtml(image)}" alt="">`;
       }
       return `<ha-icon icon="${escapeHtml(chore?.icon || "mdi:check")}"></ha-icon>`;
     }
 
     _taskImagePicker(selectedImage = undefined, allowNone = false) {
+      const normalizedImage = selectedImage?.replace(
+        /^\/chore-race-assets\//,
+        `${TASK_IMAGE_BASE}/`,
+      );
       const effectiveImage =
         selectedImage === undefined
           ? `${TASK_IMAGE_BASE}/${TASK_IMAGES[0][2]}`
-          : selectedImage;
+          : normalizedImage;
       const noneOption = allowNone
         ? `<label class="image-option">
             <input type="radio" name="image" value=""
@@ -823,10 +836,11 @@
                   <option value="mdi:toy-brick-outline">Spielzeug</option>
                 </select>
               </div></label>
-              <fieldset class="image-picker">
-                <legend>Aufgabenbild auswählen</legend>
+              <details class="image-picker">
+                <summary><strong>Aufgabenbild auswählen</strong>
+                  <small>10 moderne Motive anzeigen</small></summary>
                 <div>${this._taskImagePicker()}</div>
-              </fieldset>
+              </details>
               <button ${disabled}>Aufgabentyp anlegen</button>
             </form>
             <section class="types"><h3>Vorhandene Aufgabentypen</h3>
@@ -919,9 +933,13 @@
           background:var(--surface); border:1px solid var(--line); border-radius:10px; }
         .icon-preview ha-icon,.task-icon ha-icon { width:20px; height:20px; }
         .task-icon img { width:30px; height:30px; object-fit:contain; }
-        .image-picker { margin:0; padding:0; border:0; }
-        .image-picker legend { margin-bottom:8px; color:var(--muted);
-          font-size:12px; font-weight:600; }
+        .image-picker { margin:10px 0; padding:0; border:0; }
+        .image-picker > summary { padding:10px 12px; color:var(--ink);
+          background:var(--surface); border:1px solid var(--line);
+          border-radius:11px; font-size:12px; }
+        .image-picker > summary small { display:block; margin-top:3px;
+          color:var(--muted); font-weight:400; }
+        .image-picker[open] > summary { margin-bottom:8px; border-color:var(--accent); }
         .image-picker > div { display:grid;
           grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:8px; }
         .image-option { position:relative; display:grid; justify-items:center; gap:5px;
@@ -955,6 +973,12 @@
         li.inactive { opacity:.68; }
         summary { cursor:pointer; }
         summary small { font-weight:400; }
+        .manageable > details > summary { position:relative; padding-right:100px; }
+        .edit-hint { position:absolute; top:50%; right:0; display:inline-flex;
+          align-items:center; gap:4px; padding:5px 8px; color:var(--accent);
+          border-radius:8px; font-size:10px; font-weight:750;
+          transform:translateY(-50%); }
+        .edit-hint ha-icon { width:15px; height:15px; }
         .compact-form { margin-top:10px; padding:12px; border-radius:12px; }
         .actions,.rule-actions { display:flex; flex-wrap:wrap; gap:8px; }
         .actions button,.rule-actions button { width:auto; margin:0; }
@@ -965,6 +989,11 @@
         .task-icon { display:grid; place-items:center; flex:0 0 32px; height:32px;
           color:#fff; background:var(--accent); border-radius:10px; }
         .empty { margin:0; padding:14px; color:var(--muted); text-align:center; }
+        @container (min-width:760px) {
+          .forms { grid-template-columns:repeat(2,minmax(0,1fr)); }
+          .forms > .types,.forms > [data-form="task"] { grid-column:1/-1; }
+          li.manageable:has(> details[open]) { grid-column:1/-1; }
+        }
         @container (max-width:520px) {
           .row,ul { grid-template-columns:1fr; }
           ha-card { padding:16px; border-radius:18px; }
@@ -972,6 +1001,9 @@
           h2 { overflow-wrap:anywhere; }
           form,.tasks,.types,.rules { padding:13px; }
           .rule-actions { width:100%; padding-left:42px; }
+          .manageable > details > summary { padding-right:32px; }
+          .edit-hint { padding:4px; font-size:0; }
+          .edit-hint ha-icon { width:18px; height:18px; }
         }
       `;
     }

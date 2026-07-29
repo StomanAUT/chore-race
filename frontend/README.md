@@ -47,7 +47,9 @@ accent_color: "#74829a"
 ```
 
 For the admin-only planner, also copy `chore-race-planner-card.js`, register it
-as a module resource, and add:
+as a module resource, and copy
+`custom_components/chore_race/task_icons/` to
+`config/www/chore-race-icons/`. Then add:
 
 ```yaml
 type: custom:chore-race-planner-card
@@ -59,8 +61,9 @@ accent_color: "#74829a"
 The planner guides an administrator through creating a participant, a reusable
 chore type, and then a dated or recurring task. Recurring schedules support
 every N days, monthly, and yearly patterns. Existing chore types and open tasks
-are listed below the forms. The icon picker provides a curated visual selection
-without requiring Material Design Icon names.
+use compact, expandable edit panels. The image picker stays collapsed until it
+is needed and provides a curated visual selection without requiring Material
+Design Icon names.
 
 Both cards expose `max_width` and `accent_color` in Home Assistant's visual
 card editor. `max_width` accepts 280 to 1400 pixels; the cards also shrink to
