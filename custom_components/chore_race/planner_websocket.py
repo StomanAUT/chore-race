@@ -472,9 +472,14 @@ async def websocket_delete_task(
         vol.Required("type"): "chore_race/create_recurrence_rule",
         vol.Required("chore_type_id"): _ID,
         vol.Required("start_date"): vol.Coerce(date.fromisoformat),
-        vol.Required("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Required("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
         vol.Optional("interval", default=1): vol.All(
             int, vol.Range(min=1, max=365)
+        ),
+        vol.Optional("weekdays", default=[]): vol.All(
+            [vol.All(int, vol.Range(min=0, max=6))], vol.Length(max=7)
         ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
         vol.Optional("floor_id"): _OPTIONAL_TEXT,
@@ -496,6 +501,7 @@ async def websocket_create_recurrence_rule(
             msg["start_date"],
             frequency=msg["frequency"],
             interval=msg["interval"],
+            weekdays=msg["weekdays"],
             area_id=msg.get("area_id"),
             floor_id=msg.get("floor_id"),
             preferred_participant_id=msg.get("preferred_participant_id"),
@@ -553,8 +559,13 @@ async def websocket_update_settings(
         vol.Required("rule_id"): _ID,
         vol.Optional("chore_type_id"): _ID,
         vol.Optional("start_date"): vol.Coerce(date.fromisoformat),
-        vol.Optional("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Optional("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
         vol.Optional("interval"): vol.All(int, vol.Range(min=1, max=365)),
+        vol.Optional("weekdays"): vol.All(
+            [vol.All(int, vol.Range(min=0, max=6))], vol.Length(max=7)
+        ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
         vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,

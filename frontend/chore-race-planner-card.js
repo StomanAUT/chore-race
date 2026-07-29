@@ -356,9 +356,17 @@
         const intervalField = this.shadowRoot.querySelector(
           '[data-field="interval"]',
         );
+        const weekdaysField = this.shadowRoot.querySelector(
+          '[data-field="weekdays"]',
+        );
         const dateLabel = this.shadowRoot.querySelector('[data-label="date"]');
         const preview = this.shadowRoot.querySelector("[data-schedule-preview]");
-        if (intervalField) intervalField.hidden = schedule?.value !== "days";
+        if (intervalField) {
+          intervalField.hidden = !["days", "completion_interval"].includes(
+            schedule?.value,
+          );
+        }
+        if (weekdaysField) weekdaysField.hidden = schedule?.value !== "weekdays";
         if (dateLabel) {
           dateLabel.firstChild.textContent = recurring ? "Startdatum" : "Datum";
         }
@@ -369,6 +377,8 @@
           const descriptions = {
             once: `Einmalig am ${date || "gewählten Tag"}`,
             days: `Alle ${interval} Tage ab ${date || "dem Startdatum"}`,
+            weekdays: "An den ausgewählten Wochentagen",
+            completion_interval: `${interval} Tage nach der letzten Erledigung`,
             monthly: `Jeden Monat ab ${date || "dem Startdatum"}`,
             yearly: `Jedes Jahr ab ${date || "dem Startdatum"}`,
           };
@@ -382,6 +392,9 @@
       this.shadowRoot
         .querySelector('[name="interval"]')
         ?.addEventListener("input", updateScheduleFields);
+      this.shadowRoot
+        .querySelectorAll('[name="weekdays"]')
+        .forEach((input) => input.addEventListener("change", updateScheduleFields));
       updateScheduleFields();
 
       const pointsForms = [
@@ -506,7 +519,10 @@
                 start_date: values.get("date"),
                 frequency: schedule,
                 interval:
-                  schedule === "days" ? Number(values.get("interval")) : 1,
+                  ["days", "completion_interval"].includes(schedule)
+                    ? Number(values.get("interval"))
+                    : 1,
+                weekdays: values.getAll("weekdays").map(Number),
               },
               "Wiederkehrende Aufgabe wurde gespeichert.",
             );
@@ -832,6 +848,12 @@
       }
       const frequency = {
         days: (rule) => `Alle ${rule.interval || 1} Tage`,
+        weekdays: (rule) => {
+          const names = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+          return (rule.weekdays || []).map((day) => names[day]).join(", ");
+        },
+        completion_interval: (rule) =>
+          `${rule.interval || 1} Tage nach Erledigung`,
         monthly: () => "Monatlich",
         yearly: () => "Jährlich",
       };
@@ -1098,12 +1120,24 @@
                 <label>Wiederholung<select name="schedule">
                   <option value="once">Einmalig</option>
                   <option value="days">Alle N Tage</option>
+                  <option value="weekdays">Bestimmte Wochentage</option>
+                  <option value="completion_interval">Nach letzter Erledigung</option>
                   <option value="monthly">Einmal pro Monat</option>
                   <option value="yearly">Einmal pro Jahr</option>
                 </select></label>
                 <label data-field="interval">Intervall in Tagen<input type="number" name="interval"
                   min="1" max="365" value="2"></label>
               </div>
+              <fieldset class="weekday-picker" data-field="weekdays" hidden>
+                <legend>Wochentage</legend>
+                ${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+                  .map(
+                    (name, day) =>
+                      `<label><input type="checkbox" name="weekdays" value="${day}"
+                        ${day < 5 ? "checked" : ""}><span>${name}</span></label>`,
+                  )
+                  .join("")}
+              </fieldset>
               <p class="schedule-preview" data-schedule-preview></p>
               <p class="points-preview" data-points-preview></p>
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
@@ -1223,6 +1257,20 @@
         .row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
         .check { display:flex; flex-direction:row; align-items:center; }
         .check input { width:18px; min-height:18px; }
+        .weekday-picker { display:grid; grid-template-columns:repeat(7,minmax(0,1fr));
+          gap:5px; margin:8px 0; padding:8px; border:1px solid var(--line);
+          border-radius:11px; }
+        .weekday-picker legend { padding:0 5px; color:var(--muted);
+          font-size:10px; font-weight:800; }
+        .weekday-picker label { position:relative; display:grid; place-items:center;
+          min-height:36px; margin:0; cursor:pointer; }
+        .weekday-picker input { position:absolute; opacity:0; pointer-events:none; }
+        .weekday-picker span { display:grid; place-items:center; width:100%; height:32px;
+          color:var(--muted); border:1px solid var(--line); border-radius:9px;
+          background:var(--surface); font-size:10px; }
+        .weekday-picker input:checked + span { color:var(--ink);
+          border-color:color-mix(in srgb,var(--accent) 42%,var(--line));
+          background:var(--accent-soft); }
         .advanced-options { margin:8px 0; }
         .advanced-options > summary { padding:8px 10px; color:var(--muted);
           background:var(--surface); border:1px solid var(--line);

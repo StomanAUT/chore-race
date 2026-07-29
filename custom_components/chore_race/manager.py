@@ -39,6 +39,14 @@ from .models import (
 from .scoring import calculate_completion_score
 from .storage import ChoreRaceStore
 
+RECURRENCE_FREQUENCIES = {
+    "days",
+    "weekdays",
+    "monthly",
+    "yearly",
+    "completion_interval",
+}
+
 
 class ChoreRaceManager:
     """Own validation, mutations, aggregation and persistence."""
@@ -485,15 +493,19 @@ class ChoreRaceManager:
         *,
         frequency: str,
         interval: int = 1,
+        weekdays: list[int] | None = None,
         area_id: str | None = None,
         floor_id: str | None = None,
         preferred_participant_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a recurrence rule and materialize its first due task."""
-        if frequency not in {"days", "monthly", "yearly"}:
-            raise ValidationError("frequency must be days, monthly or yearly")
+        if frequency not in RECURRENCE_FREQUENCIES:
+            raise ValidationError("Unsupported recurrence frequency")
         if isinstance(interval, bool) or not 1 <= interval <= 365:
             raise ValidationError("interval must be between 1 and 365")
+        normalized_weekdays = self._validate_recurrence_weekdays(
+            weekdays, required=frequency == "weekdays"
+        )
         if chore_type_id not in self._data.chore_types:
             raise NotFoundError("Chore type not found")
         if preferred_participant_id is not None:
@@ -515,6 +527,7 @@ class ChoreRaceManager:
             "start_date": start_date.isoformat(),
             "frequency": frequency,
             "interval": interval,
+            "weekdays": normalized_weekdays,
             "area_id": area_id,
             "floor_id": floor_id,
             "preferred_participant_id": preferred_participant_id,
@@ -535,6 +548,7 @@ class ChoreRaceManager:
             "start_date",
             "frequency",
             "interval",
+            "weekdays",
             "area_id",
             "floor_id",
             "preferred_participant_id",
@@ -556,13 +570,19 @@ class ChoreRaceManager:
                 changes["start_date"] = start_date.isoformat()
             if (
                 "frequency" in changes
-                and changes["frequency"] not in {"days", "monthly", "yearly"}
+                and changes["frequency"] not in RECURRENCE_FREQUENCIES
             ):
-                raise ValidationError("frequency must be days, monthly or yearly")
+                raise ValidationError("Unsupported recurrence frequency")
             if "interval" in changes:
                 interval = changes["interval"]
                 if isinstance(interval, bool) or not 1 <= interval <= 365:
                     raise ValidationError("interval must be between 1 and 365")
+            final_frequency = changes.get("frequency", rule["frequency"])
+            if "weekdays" in changes or final_frequency == "weekdays":
+                changes["weekdays"] = self._validate_recurrence_weekdays(
+                    changes.get("weekdays", rule.get("weekdays")),
+                    required=final_frequency == "weekdays",
+                )
             if changes.get("preferred_participant_id") is not None:
                 self._require_participant(changes["preferred_participant_id"])
             if (
@@ -591,13 +611,55 @@ class ChoreRaceManager:
             await self._async_commit()
 
     @staticmethod
-    def _rule_is_due(rule: dict[str, Any], day: date) -> bool:
+    def _validate_recurrence_weekdays(
+        weekdays: list[int] | None, *, required: bool
+    ) -> list[int]:
+        values = weekdays or []
+        if any(
+            isinstance(day, bool)
+            or not isinstance(day, int)
+            or day not in range(7)
+            for day in values
+        ):
+            raise ValidationError("weekdays must contain values 0 through 6")
+        normalized = sorted(set(values))
+        if required and not normalized:
+            raise ValidationError("At least one weekday must be selected")
+        return normalized
+
+    def _rule_is_due(self, rule: dict[str, Any], day: date) -> bool:
         start = date.fromisoformat(rule["start_date"])
         if day < start:
             return False
         frequency = rule["frequency"]
         if frequency == "days":
             return (day - start).days % int(rule.get("interval", 1)) == 0
+        if frequency == "weekdays":
+            return day.weekday() in rule.get("weekdays", [])
+        if frequency == "completion_interval":
+            source_id = f"recurrence:{rule['id']}"
+            generated_tasks = [
+                task
+                for task in self._data.tasks.values()
+                if task.source_entity_id == source_id
+            ]
+            if any(task.status == TaskStatus.OPEN for task in generated_tasks):
+                return False
+            task_ids = {task.id for task in generated_tasks}
+            last_completion = max(
+                (
+                    completion.completed_at
+                    for completion in self._data.completions.values()
+                    if completion.active and completion.task_id in task_ids
+                ),
+                default=None,
+            )
+            if last_completion is None:
+                return not generated_tasks
+            last_day = dt_util.as_local(last_completion).date()
+            return day >= last_day + timedelta(
+                days=int(rule.get("interval", 1))
+            )
         if frequency == "monthly":
             last_day = calendar.monthrange(day.year, day.month)[1]
             return day.day == min(start.day, last_day)

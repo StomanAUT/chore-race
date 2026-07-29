@@ -64,7 +64,8 @@ accent_color: "#74829a"
 
 The planner guides an administrator through creating a participant, a reusable
 chore type, and then a dated or recurring task. Recurring schedules support
-every N days, monthly, and yearly patterns. Existing chore types and open tasks
+every N days, selected weekdays, monthly and yearly dates, and an interval
+since the last completion. Existing chore types and open tasks
 use compact, expandable edit panels. The image picker stays collapsed until it
 is needed and provides a curated visual selection without requiring Material
 Design Icon names. A task can be assigned to either a Home Assistant room or a

@@ -413,6 +413,60 @@ async def test_monthly_rule_uses_last_day_for_short_month(manager):
     assert not manager._rule_is_due(rule, date(2027, 2, 27))
 
 
+async def test_weekday_rule_materializes_only_selected_days(manager):
+    """Weekday schedules use Monday=0 through Sunday=6."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Staubsaugen", 4)
+    monday = date(2027, 8, 2)
+    rule = await manager.async_create_recurrence_rule(
+        chore_type.id,
+        monday,
+        frequency="weekdays",
+        weekdays=[0, 2],
+    )
+
+    assert manager._rule_is_due(rule, monday)
+    assert not manager._rule_is_due(rule, date(2027, 8, 3))
+    assert manager._rule_is_due(rule, date(2027, 8, 4))
+    assert await manager.async_materialize_recurrences(monday) == 1
+    assert await manager.async_materialize_recurrences(date(2027, 8, 4)) == 1
+
+    with pytest.raises(ValidationError, match="At least one weekday"):
+        await manager.async_create_recurrence_rule(
+            chore_type.id,
+            monday,
+            frequency="weekdays",
+            weekdays=[],
+        )
+
+
+async def test_completion_interval_waits_since_last_completion(manager):
+    """A completion-based rule never duplicates open work."""
+    await manager.async_load()
+    participant = await manager.async_create_participant("Arthur")
+    chore_type = await manager.async_create_chore_type("WC reinigen", 8)
+    start = manager.today()
+    rule = await manager.async_create_recurrence_rule(
+        chore_type.id,
+        start,
+        frequency="completion_interval",
+        interval=7,
+    )
+    generated = [
+        task
+        for task in manager.data.tasks.values()
+        if task.source_entity_id == f"recurrence:{rule['id']}"
+    ]
+    assert len(generated) == 1
+    assert await manager.async_materialize_recurrences(start + timedelta(days=8)) == 0
+
+    await manager.async_complete_task(generated[0].id, participant.id)
+
+    assert await manager.async_materialize_recurrences(start + timedelta(days=6)) == 0
+    assert await manager.async_materialize_recurrences(start + timedelta(days=7)) == 1
+    assert await manager.async_materialize_recurrences(start + timedelta(days=8)) == 0
+
+
 async def test_recurrence_rule_can_be_updated_and_deactivated(manager):
     await manager.async_load()
     chore_type = await manager.async_create_chore_type("Müll", 3)

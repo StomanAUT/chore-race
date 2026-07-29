@@ -109,6 +109,18 @@ for presentation. Existing records without `floor_id` continue to load with
 the default value `null`. Materialized recurring tasks snapshot the rule's
 location scope so later rule edits do not rewrite existing work or history.
 
+## Recurrence semantics
+
+Calendar rules support every N days, selected weekdays, monthly and yearly
+dates. Monthly and yearly rules that begin at the end of a month use that
+month's final valid day.
+
+Completion-based rules create their first task on or after the configured
+start date. They never create another instance while generated work remains
+open. After completion, the next task becomes due only after the configured
+number of local calendar days. The completion timestamp is authoritative;
+changing the rule never rewrites already materialized tasks or history.
+
 ## Chore artwork
 
 `ChoreType.image` is the primary visual used by the planner and race card.

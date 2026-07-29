@@ -156,6 +156,12 @@ fields. Every materialized task snapshots that assignment, so a rule such as
 “Boden wischen · Erdgeschoss · 1 Punkt pro Raum” produces one floor-wide task
 per due date and snapshots the then-current room multiplier.
 
+`frequency` accepts `days`, `weekdays`, `monthly`, `yearly` and
+`completion_interval`. Weekday rules include a `weekdays` array using Monday
+`0` through Sunday `6`. Completion intervals use `interval` as the number of
+local calendar days after the last active completion and suppress new
+materialization while an earlier generated task remains open.
+
 ### Update settings
 
 ```json
