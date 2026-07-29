@@ -35,6 +35,8 @@ from .websocket import async_register_websocket_commands
 
 type ChoreRaceConfigEntry = ConfigEntry[ChoreRaceManager]
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 _ID = vol.All(str, vol.Length(min=1, max=64))
 _NAME = vol.All(str, vol.Strip, vol.Length(min=1, max=100))
 _POINTS = vol.All(vol.Coerce(int), vol.Range(min=0, max=1000))
