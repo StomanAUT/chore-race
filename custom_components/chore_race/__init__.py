@@ -12,6 +12,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
     DOMAIN,
@@ -20,6 +21,7 @@ from .const import (
     SERVICE_CREATE_CHORE_TYPE,
     SERVICE_CREATE_PARTICIPANT,
     SERVICE_CREATE_TASK,
+    SERVICE_CREATE_RECURRENCE_RULE,
     SERVICE_DELETE_TASK,
     SERVICE_UNDO_COMPLETION,
     SERVICE_UPDATE_CHORE_TYPE,
@@ -107,6 +109,18 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("blocked", default=False): cv.boolean,
     }
 )
+CREATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("chore_type_id"): _ID,
+        vol.Required("start_date"): cv.date,
+        vol.Required("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Optional("interval", default=1): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=365)
+        ),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+    }
+)
 COMPLETE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("task_id"): _ID,
@@ -122,6 +136,7 @@ ADMIN_SERVICES = {
     SERVICE_CREATE_CHORE_TYPE,
     SERVICE_UPDATE_CHORE_TYPE,
     SERVICE_CREATE_TASK,
+    SERVICE_CREATE_RECURRENCE_RULE,
     SERVICE_UNDO_COMPLETION,
     SERVICE_DELETE_TASK,
 }
@@ -153,6 +168,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 result = await manager.async_create_task(
                     task_date=task_date, **values
                 )
+            elif call.service == SERVICE_CREATE_RECURRENCE_RULE:
+                start_date: date = values.pop("start_date")
+                result = await manager.async_create_recurrence_rule(
+                    start_date=start_date, **values
+                )
             elif call.service == SERVICE_COMPLETE_TASK:
                 result = await manager.async_complete_task(**values)
             elif call.service == SERVICE_UNDO_COMPLETION:
@@ -164,7 +184,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 raise HomeAssistantError("Unknown Chore Race action")
         except ChoreRaceError as err:
             raise HomeAssistantError(str(err)) from err
-        return result.to_dict() if call.return_response else None
+        if not call.return_response:
+            return None
+        return result if isinstance(result, dict) else result.to_dict()
 
     schemas = {
         SERVICE_CREATE_PARTICIPANT: CREATE_PARTICIPANT_SCHEMA,
@@ -172,6 +194,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_CREATE_CHORE_TYPE: CREATE_CHORE_TYPE_SCHEMA,
         SERVICE_UPDATE_CHORE_TYPE: UPDATE_CHORE_TYPE_SCHEMA,
         SERVICE_CREATE_TASK: CREATE_TASK_SCHEMA,
+        SERVICE_CREATE_RECURRENCE_RULE: CREATE_RECURRENCE_RULE_SCHEMA,
         SERVICE_COMPLETE_TASK: COMPLETE_TASK_SCHEMA,
         SERVICE_UNDO_COMPLETION: UNDO_COMPLETION_SCHEMA,
         SERVICE_DELETE_TASK: DELETE_TASK_SCHEMA,
@@ -193,6 +216,18 @@ async def async_setup_entry(
     """Load one Chore Race config entry."""
     manager = ChoreRaceManager(hass, ChoreRaceStore(hass))
     await manager.async_load()
+    await manager.async_materialize_recurrences()
+
+    async def materialize_recurring_tasks(now: Any) -> None:
+        await manager.async_materialize_recurrences(now.date())
+
+    manager.remove_recurrence_listener = async_track_time_change(
+        hass,
+        materialize_recurring_tasks,
+        hour=0,
+        minute=5,
+        second=0,
+    )
     entry.runtime_data = manager
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -202,6 +237,11 @@ async def async_unload_entry(
     hass: HomeAssistant, entry: ChoreRaceConfigEntry
 ) -> bool:
     """Unload entities and release runtime data."""
+    remove_listener = getattr(
+        entry.runtime_data, "remove_recurrence_listener", None
+    )
+    if remove_listener:
+        remove_listener()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 

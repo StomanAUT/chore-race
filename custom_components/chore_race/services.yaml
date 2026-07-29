@@ -19,6 +19,40 @@ create_participant:
         number:
           mode: box
 
+create_recurrence_rule:
+  name: Create recurrence rule
+  description: Schedule a chore every N days, monthly, or yearly.
+  fields:
+    chore_type_id:
+      required: true
+      selector:
+        text:
+    start_date:
+      required: true
+      selector:
+        date:
+    frequency:
+      required: true
+      selector:
+        select:
+          options:
+            - days
+            - monthly
+            - yearly
+    interval:
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 365
+          mode: box
+    area_id:
+      selector:
+        area:
+    preferred_participant_id:
+      selector:
+        text:
+
 update_participant:
   name: Update participant
   description: Update participant fields without changing the stable ID.

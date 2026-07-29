@@ -159,18 +159,44 @@
         });
 
       this.shadowRoot
+        .querySelector('[name="icon"]')
+        ?.addEventListener("change", (event) => {
+          this.shadowRoot
+            .querySelector(".icon-preview ha-icon")
+            ?.setAttribute("icon", event.currentTarget.value);
+        });
+
+      this.shadowRoot
         .querySelector('[data-form="task"]')
         ?.addEventListener("submit", (event) => {
           event.preventDefault();
           const values = new FormData(event.currentTarget);
+          const schedule = values.get("schedule");
+          const common = {
+            chore_type_id: values.get("chore_type_id"),
+            area_id: values.get("area_id") || null,
+            preferred_participant_id:
+              values.get("preferred_participant_id") || null,
+          };
+          if (schedule !== "once") {
+            this._submit(
+              "create_recurrence_rule",
+              {
+                ...common,
+                start_date: values.get("date"),
+                frequency: schedule,
+                interval:
+                  schedule === "days" ? Number(values.get("interval")) : 1,
+              },
+              "Wiederkehrende Aufgabe wurde gespeichert.",
+            );
+            return;
+          }
           this._submit(
             "create_task",
             {
-              chore_type_id: values.get("chore_type_id"),
+              ...common,
               date: values.get("date"),
-              area_id: values.get("area_id") || null,
-              preferred_participant_id:
-                values.get("preferred_participant_id") || null,
             },
             "Aufgabe wurde für den gewählten Tag eingeplant.",
           );
@@ -220,6 +246,23 @@
         .map(
           (item) =>
             `<option value="${escapeHtml(item.area_id)}">${escapeHtml(item.name)}</option>`,
+        )
+        .join("");
+    }
+
+    _choreTypeList() {
+      if (!this._data.choreTypes.length) {
+        return '<p class="empty">Noch keine Aufgabentypen angelegt.</p>';
+      }
+      return this._data.choreTypes
+        .map(
+          (item) => `<li>
+            <span class="task-icon"><ha-icon icon="${escapeHtml(item.icon || "mdi:check")}"></ha-icon></span>
+            <span><strong>${escapeHtml(item.name)}</strong>
+              <small>${item.default_race_points} Punkte${
+                item.difficulty ? ` · ${escapeHtml(item.difficulty)}` : ""
+              }</small></span>
+          </li>`,
         )
         .join("");
     }
@@ -304,10 +347,27 @@
                   <option value="medium">Mittel</option><option value="hard">Schwer</option>
                 </select></label>
               </div>
-              <label>Icon<input maxlength="255" name="icon"
-                placeholder="mdi:dishwasher"></label>
+              <label>Icon<div class="icon-field">
+                <span class="icon-preview"><ha-icon icon="mdi:check"></ha-icon></span>
+                <select name="icon">
+                  <option value="mdi:check">Allgemein</option>
+                  <option value="mdi:dishwasher">Geschirrspüler</option>
+                  <option value="mdi:broom">Kehren / Putzen</option>
+                  <option value="mdi:vacuum">Staubsaugen</option>
+                  <option value="mdi:washing-machine">Wäsche</option>
+                  <option value="mdi:trash-can-outline">Müll</option>
+                  <option value="mdi:bed">Bett / Schlafzimmer</option>
+                  <option value="mdi:food-apple-outline">Küche / Essen</option>
+                  <option value="mdi:flower">Garten</option>
+                  <option value="mdi:dog">Haustier</option>
+                  <option value="mdi:toilet">Bad / WC</option>
+                  <option value="mdi:toy-brick-outline">Spielzeug</option>
+                </select>
+              </div></label>
               <button ${disabled}>Aufgabentyp anlegen</button>
             </form>
+            <section class="types"><h3>Vorhandene Aufgabentypen</h3>
+              <ul>${this._choreTypeList()}</ul></section>
             <form data-form="task">
               <h3><span>3</span> Aufgabe einplanen</h3>
               <label>Aufgabentyp<select required name="chore_type_id">
@@ -321,6 +381,16 @@
               <label>Bevorzugte Person<select name="preferred_participant_id">
                 <option value="">Noch offen</option>${this._participantOptions()}
               </select></label>
+              <div class="row">
+                <label>Wiederholung<select name="schedule">
+                  <option value="once">Einmalig</option>
+                  <option value="days">Alle N Tage</option>
+                  <option value="monthly">Einmal pro Monat</option>
+                  <option value="yearly">Einmal pro Jahr</option>
+                </select></label>
+                <label>Intervall in Tagen<input type="number" name="interval"
+                  min="1" max="365" value="2"></label>
+              </div>
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
             </form>
           </div>
@@ -359,7 +429,7 @@
         .refresh { width:42px; height:42px; padding:0; font-size:22px; border-radius:14px; }
         .forms { display:grid; grid-template-columns:1fr;
           gap:14px; margin-top:20px; align-items:start; }
-        form,.tasks { padding:16px; border:1px solid var(--line);
+        form,.tasks,.types { padding:16px; border:1px solid var(--line);
           border-radius:18px; background:var(--surface-raised); }
         label { display:grid; gap:6px; margin:10px 0; color:var(--muted);
           font-size:12px; font-weight:700; }
@@ -375,12 +445,16 @@
         form button { width:100%; margin-top:6px; }
         button:disabled { cursor:not-allowed; opacity:.45; }
         .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .icon-field { display:grid; grid-template-columns:46px 1fr; gap:8px; }
+        .icon-preview { display:grid; place-items:center; color:var(--ink);
+          background:var(--surface); border:1px solid var(--line); border-radius:10px; }
+        .icon-preview ha-icon,.task-icon ha-icon { width:20px; height:20px; }
         .loading,.notice,.error { margin:14px 0 0; padding:10px 12px; border-radius:10px;
           font-size:13px; }
         .loading { color:#4338ca; background:#eeecff; }
         .notice { color:#08775c; background:#ddfbf1; }
         .error { color:#a61b1b; background:#fee9e7; }
-        .tasks { margin-top:14px; }
+        .tasks,.types { margin-top:14px; }
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
         li { display:flex; gap:10px; align-items:center; padding:10px; border-radius:12px;

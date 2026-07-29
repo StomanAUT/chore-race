@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import calendar
 from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Any
@@ -303,6 +304,89 @@ class ChoreRaceManager:
             await self._async_commit()
             self.hass.bus.async_fire(EVENT_TASK_CREATED, {"task_id": task.id})
             return task
+
+    async def async_create_recurrence_rule(
+        self,
+        chore_type_id: str,
+        start_date: date,
+        *,
+        frequency: str,
+        interval: int = 1,
+        area_id: str | None = None,
+        preferred_participant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a recurrence rule and materialize its first due task."""
+        if frequency not in {"days", "monthly", "yearly"}:
+            raise ValidationError("frequency must be days, monthly or yearly")
+        if isinstance(interval, bool) or not 1 <= interval <= 365:
+            raise ValidationError("interval must be between 1 and 365")
+        if chore_type_id not in self._data.chore_types:
+            raise NotFoundError("Chore type not found")
+        if preferred_participant_id is not None:
+            self._require_participant(preferred_participant_id)
+        if (
+            area_id is not None
+            and ar.async_get(self.hass).async_get_area(area_id) is None
+        ):
+            raise ValidationError("Home Assistant area does not exist")
+        rule = {
+            "id": self._new_id(),
+            "chore_type_id": chore_type_id,
+            "start_date": start_date.isoformat(),
+            "frequency": frequency,
+            "interval": interval,
+            "area_id": area_id,
+            "preferred_participant_id": preferred_participant_id,
+            "active": True,
+        }
+        async with self._mutation_lock:
+            self._data.recurrence_rules[rule["id"]] = rule
+            await self._async_commit()
+        await self.async_materialize_recurrences(self.today())
+        return rule
+
+    @staticmethod
+    def _rule_is_due(rule: dict[str, Any], day: date) -> bool:
+        start = date.fromisoformat(rule["start_date"])
+        if day < start:
+            return False
+        frequency = rule["frequency"]
+        if frequency == "days":
+            return (day - start).days % int(rule.get("interval", 1)) == 0
+        if frequency == "monthly":
+            last_day = calendar.monthrange(day.year, day.month)[1]
+            return day.day == min(start.day, last_day)
+        if frequency == "yearly" and day.month == start.month:
+            last_day = calendar.monthrange(day.year, day.month)[1]
+            return day.day == min(start.day, last_day)
+        return False
+
+    async def async_materialize_recurrences(self, day: date | None = None) -> int:
+        """Create each due recurring task at most once for a date."""
+        current = day or self.today()
+        due_rules = [
+            rule
+            for rule in self._data.recurrence_rules.values()
+            if rule.get("active", True) and self._rule_is_due(rule, current)
+        ]
+        created = 0
+        for rule in due_rules:
+            source_id = f"recurrence:{rule['id']}"
+            if any(
+                task.date == current and task.source_entity_id == source_id
+                for task in self._data.tasks.values()
+            ):
+                continue
+            await self.async_create_task(
+                rule["chore_type_id"],
+                current,
+                area_id=rule.get("area_id"),
+                preferred_participant_id=rule.get("preferred_participant_id"),
+                source=TaskSource.RECURRING,
+                source_entity_id=source_id,
+            )
+            created += 1
+        return created
 
     async def async_delete_task(self, task_id: str) -> None:
         """Delete an uncompleted task."""

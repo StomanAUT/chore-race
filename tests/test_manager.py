@@ -112,3 +112,43 @@ async def test_planner_settings_are_validated_and_persisted(manager):
 
     with pytest.raises(ValidationError):
         await manager.async_update_settings(race_ready_time="25:99")
+
+
+async def test_recurring_tasks_materialize_once_per_due_date(manager):
+    """Every-N-days rules create one stable task for each due date."""
+    await manager.async_load()
+    participant = await manager.async_create_participant("Arthur")
+    chore_type = await manager.async_create_chore_type("Müll", 3)
+    start = date(2027, 7, 1)
+    rule = await manager.async_create_recurrence_rule(
+        chore_type.id,
+        start,
+        frequency="days",
+        interval=2,
+        preferred_participant_id=participant.id,
+    )
+
+    assert await manager.async_materialize_recurrences(date(2027, 7, 2)) == 0
+    assert await manager.async_materialize_recurrences(date(2027, 7, 3)) == 1
+    assert await manager.async_materialize_recurrences(date(2027, 7, 3)) == 0
+    tasks = [
+        task
+        for task in manager.data.tasks.values()
+        if task.source_entity_id == f"recurrence:{rule['id']}"
+    ]
+    assert len(tasks) == 1
+    assert tasks[0].date == date(2027, 7, 3)
+
+
+async def test_monthly_rule_uses_last_day_for_short_month(manager):
+    """A rule starting on day 31 remains due in shorter months."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Monatscheck", 4)
+    rule = await manager.async_create_recurrence_rule(
+        chore_type.id,
+        date(2027, 1, 31),
+        frequency="monthly",
+    )
+
+    assert manager._rule_is_due(rule, date(2027, 2, 28))
+    assert not manager._rule_is_due(rule, date(2027, 2, 27))

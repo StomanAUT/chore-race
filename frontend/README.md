@@ -57,8 +57,10 @@ accent_color: "#74829a"
 ```
 
 The planner guides an administrator through creating a participant, a reusable
-chore type, and then a dated task. Existing open tasks are listed below the
-forms.
+chore type, and then a dated or recurring task. Recurring schedules support
+every N days, monthly, and yearly patterns. Existing chore types and open tasks
+are listed below the forms. The icon picker provides a curated visual selection
+without requiring Material Design Icon names.
 
 Both cards accept a `max_width` between 360 and 1400 pixels and an optional
 six-digit hexadecimal `accent_color`. They always shrink to the available
