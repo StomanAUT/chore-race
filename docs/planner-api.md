@@ -106,7 +106,11 @@ Unrelated completions remain active.
 
 Tasks may target either one Home Assistant area (`area_id`) or one Home
 Assistant floor (`floor_id`). The fields are mutually exclusive. Omit both for
-a household-wide task.
+a household-wide task. `race_points`, when supplied, is the base value per
+room. For a floor assignment the manager multiplies it (or the chore type's
+default) by the number of Home Assistant areas currently assigned to the
+floor. The response exposes `base_race_points`, `points_multiplier`, and the
+final `race_points`.
 
 ```json
 {
@@ -135,6 +139,8 @@ a household-wide task.
 When changing the scope, clear the previous field explicitly: for example,
 send `area_id: null` together with a new `floor_id`. The manager validates IDs
 against Home Assistant's registries and rejects requests containing both.
+Changing an open task's location or base `race_points` recalculates its
+snapshotted total. A floor without assigned rooms is rejected.
 
 Only untouched open tasks can be updated or deleted. Tasks with completion
 history remain immutable, including after an undo. Untouched open tasks remain
@@ -147,8 +153,8 @@ recurrence rule references the type; otherwise it must be deactivated.
 
 Recurring rules accept the same mutually exclusive `area_id` and `floor_id`
 fields. Every materialized task snapshots that assignment, so a rule such as
-“Boden wischen · Erdgeschoss · 5 Punkte” produces one floor-wide task per due
-date rather than one task for every room.
+“Boden wischen · Erdgeschoss · 1 Punkt pro Raum” produces one floor-wide task
+per due date and snapshots the then-current room multiplier.
 
 ### Update settings
 

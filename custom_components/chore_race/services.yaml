@@ -307,6 +307,7 @@ create_task:
       selector:
         floor:
     race_points:
+      description: Base points per room; floor tasks multiply this by their assigned room count.
       selector:
         number:
           min: 0
@@ -351,6 +352,7 @@ update_task:
       selector:
         floor:
     race_points:
+      description: Base points per room; floor tasks recalculate their total.
       selector:
         number:
           min: 0

@@ -615,6 +615,11 @@
                 : `<div class="task-icon" aria-hidden="true">
                     <ha-icon icon="${escapeHtml(task.icon ?? "mdi:checkbox-marked-circle-outline")}"></ha-icon>
                   </div>`;
+              const multiplier = Number(task.points_multiplier) || 1;
+              const pointLabel =
+                task.floor_id && multiplier > 1
+                  ? `${Number(task.base_race_points) || 0} × ${multiplier} Räume = ${Number(task.race_points) || 0} Punkte`
+                  : `${Number(task.race_points) || 0} Punkte`;
               return `
                 <article class="task-card">
                   ${image}
@@ -622,7 +627,7 @@
                     <div>
                       <small>NÄCHSTE AUFGABE</small>
                       <h3>${escapeHtml(task.name ?? "Aufgabe")}</h3>
-                      <span>${Number(task.race_points) || 0} Punkte${
+                      <span>${pointLabel}${
                         task.floor_id && this._floors[task.floor_id]
                           ? ` · ${escapeHtml(this._floors[task.floor_id])}`
                           : task.area_id && this._areas[task.area_id]

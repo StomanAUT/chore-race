@@ -124,6 +124,8 @@ class ChoreTask:
     chain_id: str | None = None
     chain_step_id: str | None = None
     blocked: bool = False
+    base_race_points: int | None = None
+    points_multiplier: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         """Return JSON-compatible data."""

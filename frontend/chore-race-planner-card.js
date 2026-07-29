@@ -339,6 +339,23 @@
         ?.addEventListener("input", updateScheduleFields);
       updateScheduleFields();
 
+      const pointsForms = [
+        this.shadowRoot.querySelector('[data-form="task"]'),
+        ...this.shadowRoot.querySelectorAll("[data-edit-task]"),
+      ].filter(Boolean);
+      pointsForms.forEach((form) => {
+        form
+          .querySelector('[name="chore_type_id"]')
+          ?.addEventListener("change", () => this._updatePointsPreview(form));
+        form
+          .querySelector('[name="location_id"]')
+          ?.addEventListener("change", () => this._updatePointsPreview(form));
+        form
+          .querySelector('[name="race_points"]')
+          ?.addEventListener("input", () => this._updatePointsPreview(form));
+        this._updatePointsPreview(form);
+      });
+
       this.shadowRoot.querySelectorAll("[data-edit-chore]").forEach((form) => {
         form.addEventListener("submit", (event) => {
           event.preventDefault();
@@ -544,6 +561,50 @@
       };
     }
 
+    _floorAreaCount(floorId) {
+      return this._data.areas.filter((area) => area.floor_id === floorId).length;
+    }
+
+    _updatePointsPreview(form) {
+      const preview = form?.querySelector("[data-points-preview]");
+      if (!preview) return;
+      const choreId = form.querySelector('[name="chore_type_id"]')?.value;
+      const chore = this._data.choreTypes.find((item) => item.id === choreId);
+      if (!chore) {
+        preview.textContent = "Aufgabentyp wählen, um die Punkte zu berechnen.";
+        preview.classList.remove("warning");
+        return;
+      }
+      const baseInput = form.querySelector('[name="race_points"]');
+      const basePoints = Number(
+        baseInput?.value ?? chore.default_race_points ?? 0,
+      );
+      const location = this._locationPayload(
+        form.querySelector('[name="location_id"]')?.value,
+      );
+      if (!location.floor_id) {
+        preview.textContent = `${basePoints} ${
+          basePoints === 1 ? "Punkt" : "Punkte"
+        } für diese Aufgabe`;
+        preview.classList.remove("warning");
+        return;
+      }
+      const floor = this._data.floors.find(
+        (item) => item.floor_id === location.floor_id,
+      );
+      const areaCount = this._floorAreaCount(location.floor_id);
+      if (!areaCount) {
+        preview.textContent = `${floor?.name || "Diese Etage"} enthält noch keine zugeordneten Räume.`;
+        preview.classList.add("warning");
+        return;
+      }
+      const total = basePoints * areaCount;
+      preview.textContent = `${basePoints} ${
+        basePoints === 1 ? "Punkt" : "Punkte"
+      } × ${areaCount} ${areaCount === 1 ? "Raum" : "Räume"} = ${total} Punkte`;
+      preview.classList.remove("warning");
+    }
+
     _locationOptions(areaId = null, floorId = null) {
       const selected = floorId
         ? `floor:${floorId}`
@@ -746,11 +807,16 @@
           const participant = participantById[task.preferred_participant_id];
           const area = areaById[task.area_id];
           const floor = floorById[task.floor_id];
+          const multiplier = Number(task.points_multiplier) || 1;
+          const pointLabel =
+            task.floor_id && multiplier > 1
+              ? `${task.base_race_points ?? task.race_points} × ${multiplier} Räume = ${task.race_points} P`
+              : `${task.race_points} P`;
           const details = [
             task.date,
             floor?.name || area?.name,
             participant?.name,
-            `${task.race_points} P`,
+            pointLabel,
           ]
             .filter(Boolean)
             .map(escapeHtml)
@@ -770,8 +836,9 @@
                 <div class="row">
                   <label>Datum<input required type="date" name="date"
                     value="${escapeHtml(task.date)}"></label>
-                  <label>Punkte<input required type="number" min="0" max="1000"
-                    name="race_points" value="${task.race_points}"></label>
+                  <label>Basispunkte<input required type="number" min="0" max="1000"
+                    name="race_points"
+                    value="${task.base_race_points ?? task.race_points}"></label>
                 </div>
                 <div class="row">
                   <label>Ort<select name="location_id">
@@ -784,6 +851,7 @@
                 </div>
                 <label class="check"><input name="blocked" type="checkbox"
                   ${task.blocked ? "checked" : ""}> Aufgabe blockieren</label>
+                <p class="points-preview" data-points-preview></p>
                 ${
                   task.source === "recurring"
                     ? '<p class="schedule-preview">Diese Änderung betrifft nur diese konkrete Aufgabe, nicht ihre Wiederholungsregel.</p>'
@@ -963,6 +1031,7 @@
                   min="1" max="365" value="2"></label>
               </div>
               <p class="schedule-preview" data-schedule-preview></p>
+              <p class="points-preview" data-points-preview></p>
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
             </form>
           </div>
@@ -1091,6 +1160,14 @@
         .error { color:var(--primary-text-color);
           background:color-mix(in srgb,var(--error-color,#db4437) 14%,var(--surface)); }
         .schedule-preview { margin:4px 0 10px; color:var(--muted); font-size:12px; }
+        .points-preview { margin:4px 0 10px; padding:9px 11px;
+          color:var(--primary-text-color);
+          background:color-mix(in srgb,var(--accent) 9%,var(--surface));
+          border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));
+          border-radius:10px; font-size:12px; font-weight:650; }
+        .points-preview.warning { color:var(--error-color,#db4437);
+          background:color-mix(in srgb,var(--error-color,#db4437) 8%,var(--surface));
+          border-color:color-mix(in srgb,var(--error-color,#db4437) 22%,var(--line)); }
         [hidden] { display:none !important; }
         .tasks,.types,.rules { margin-top:14px; }
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;

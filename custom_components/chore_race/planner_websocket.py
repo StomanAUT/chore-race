@@ -68,6 +68,7 @@ def websocket_get_areas(
                     "name": area.name,
                     "icon": area.icon,
                     "picture": area.picture,
+                    "floor_id": area.floor_id,
                 }
                 for area in area_registry.async_list_areas()
             ]

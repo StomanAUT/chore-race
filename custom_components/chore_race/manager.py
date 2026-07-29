@@ -97,6 +97,26 @@ class ChoreRaceManager:
         if area_id is not None and floor_id is not None:
             raise ValidationError("A task can use either an area or a floor, not both")
 
+    def _floor_area_count(self, floor_id: str) -> int:
+        """Return how many Home Assistant areas belong to one floor."""
+        count = sum(
+            1
+            for area in ar.async_get(self.hass).async_list_areas()
+            if getattr(area, "floor_id", None) == floor_id
+        )
+        if count == 0:
+            raise ValidationError("Home Assistant floor has no assigned areas")
+        return count
+
+    def _task_points(
+        self, base_points: int, floor_id: str | None
+    ) -> tuple[int, int]:
+        """Return total points and the snapshotted location multiplier."""
+        base = self._validate_points(base_points, "base_race_points")
+        multiplier = self._floor_area_count(floor_id) if floor_id else 1
+        total = self._validate_points(base * multiplier, "race_points")
+        return total, multiplier
+
     async def async_create_participant(
         self,
         name: str,
@@ -333,6 +353,14 @@ class ChoreRaceManager:
             source = TaskSource(source)
             if source is TaskSource.ENTITY and not source_entity_id:
                 raise ValidationError("Entity tasks require source_entity_id")
+            base_points = (
+                chore_type.default_race_points
+                if race_points is None
+                else race_points
+            )
+            total_points, points_multiplier = self._task_points(
+                base_points, floor_id
+            )
             now = dt_util.utcnow()
             task = ChoreTask(
                 id=self._new_id(),
@@ -340,18 +368,15 @@ class ChoreRaceManager:
                 area_id=area_id,
                 floor_id=floor_id,
                 date=task_date,
-                race_points=self._validate_points(
-                    chore_type.default_race_points
-                    if race_points is None
-                    else race_points,
-                    "race_points",
-                ),
+                race_points=total_points,
                 preferred_participant_id=preferred_participant_id,
                 source=source,
                 source_entity_id=source_entity_id,
                 chain_id=chain_id,
                 chain_step_id=chain_step_id,
                 blocked=blocked,
+                base_race_points=base_points,
+                points_multiplier=points_multiplier,
                 created_at=now,
                 updated_at=now,
             )
@@ -554,10 +579,19 @@ class ChoreRaceManager:
             self._validate_location(final_area_id, final_floor_id)
             if changes.get("preferred_participant_id") is not None:
                 self._require_participant(changes["preferred_participant_id"])
-            if "race_points" in changes:
-                changes["race_points"] = self._validate_points(
-                    changes["race_points"], "race_points"
+            if {"race_points", "area_id", "floor_id"} & changes.keys():
+                base_points = changes.get(
+                    "race_points",
+                    task.base_race_points
+                    if task.base_race_points is not None
+                    else task.race_points,
                 )
+                total_points, points_multiplier = self._task_points(
+                    base_points, final_floor_id
+                )
+                changes["race_points"] = total_points
+                changes["base_race_points"] = base_points
+                changes["points_multiplier"] = points_multiplier
             if "blocked" in changes and not isinstance(changes["blocked"], bool):
                 raise ValidationError("blocked must be a boolean")
             for key, value in changes.items():

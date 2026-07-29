@@ -79,6 +79,18 @@ Assistant Area Registry entry (`area_id`) or one Floor Registry entry
 - a floor scopes work across all rooms on that floor;
 - neither field means the task has no location scope.
 
+Point defaults are interpreted per room. A floor-wide task snapshots the
+current number of Home Assistant areas assigned to that floor and stores:
+
+- `base_race_points`: the chore type's points per room;
+- `points_multiplier`: the number of rooms when the task was planned;
+- `race_points`: the resulting total.
+
+For example, a one-point chore covering six rooms snapshots `1 × 6 = 6`
+points. Later registry or chore-type changes do not silently rewrite that
+task's value. Floors without assigned rooms are rejected instead of creating
+an ambiguous zero-room task.
+
 Registry IDs remain the stable stored identity; names and icons are resolved
 for presentation. Existing records without `floor_id` continue to load with
 the default value `null`. Materialized recurring tasks snapshot the rule's

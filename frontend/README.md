@@ -68,7 +68,9 @@ use compact, expandable edit panels. The image picker stays collapsed until it
 is needed and provides a curated visual selection without requiring Material
 Design Icon names. A task can be assigned to either a Home Assistant room or a
 whole floor; selecting one clears the other. This supports one task such as
-“Boden wischen · Erdgeschoss · 5 Punkte” without duplicating it for every room.
+“Boden wischen · Erdgeschoss” without duplicating it for every room. The
+planner previews and snapshots the point calculation, for example
+`1 Punkt × 6 Räume = 6 Punkte`.
 
 Both cards expose `max_width` and `accent_color` in Home Assistant's visual
 card editor. `max_width` accepts 280 to 1400 pixels; the cards also shrink to

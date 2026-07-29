@@ -75,18 +75,29 @@ async def test_open_task_can_be_edited_and_deleted(manager):
 
 
 async def test_task_can_target_home_assistant_floor(manager, monkeypatch):
-    """A task may cover one HA floor instead of one individual area."""
+    """A floor task snapshots base points times its assigned room count."""
     await manager.async_load()
     chore_type = await manager.async_create_chore_type("Boden wischen", 5)
-    registry = SimpleNamespace(
+    floor_registry = SimpleNamespace(
         async_get_floor=lambda floor_id: (
             SimpleNamespace(floor_id=floor_id, name="Erdgeschoss")
             if floor_id == "erdgeschoss"
             else None
         )
     )
+    area_registry = SimpleNamespace(
+        async_list_areas=lambda: [
+            SimpleNamespace(id="wohnzimmer", floor_id="erdgeschoss"),
+            SimpleNamespace(id="esszimmer", floor_id="erdgeschoss"),
+            SimpleNamespace(id="kueche", floor_id="erdgeschoss"),
+            SimpleNamespace(id="bad", floor_id="obergeschoss"),
+        ]
+    )
     monkeypatch.setattr(
-        manager_module.fr, "async_get", lambda hass: registry
+        manager_module.fr, "async_get", lambda hass: floor_registry
+    )
+    monkeypatch.setattr(
+        manager_module.ar, "async_get", lambda hass: area_registry
     )
 
     task = await manager.async_create_task(
@@ -97,6 +108,9 @@ async def test_task_can_target_home_assistant_floor(manager, monkeypatch):
 
     assert task.floor_id == "erdgeschoss"
     assert task.area_id is None
+    assert task.base_race_points == 5
+    assert task.points_multiplier == 3
+    assert task.race_points == 15
     assert task.to_dict()["floor_id"] == "erdgeschoss"
 
 
@@ -123,7 +137,11 @@ async def test_task_can_switch_from_area_to_floor(manager, monkeypatch):
             SimpleNamespace(id=area_id, name="Wohnzimmer")
             if area_id == "wohnzimmer"
             else None
-        )
+        ),
+        async_list_areas=lambda: [
+            SimpleNamespace(id="wohnzimmer", floor_id="erdgeschoss"),
+            SimpleNamespace(id="esszimmer", floor_id="erdgeschoss"),
+        ],
     )
     floor_registry = SimpleNamespace(
         async_get_floor=lambda floor_id: (
@@ -152,6 +170,9 @@ async def test_task_can_switch_from_area_to_floor(manager, monkeypatch):
 
     assert updated.area_id is None
     assert updated.floor_id == "erdgeschoss"
+    assert updated.base_race_points == 5
+    assert updated.points_multiplier == 2
+    assert updated.race_points == 10
 
 
 async def test_unknown_home_assistant_floor_is_rejected(manager, monkeypatch):
@@ -168,6 +189,33 @@ async def test_unknown_home_assistant_floor_is_rejected(manager, monkeypatch):
             chore_type.id,
             manager.today(),
             floor_id="gibt-es-nicht",
+        )
+
+
+async def test_floor_without_assigned_rooms_is_rejected(manager, monkeypatch):
+    """A floor multiplier cannot silently create a zero-room assignment."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Boden wischen", 1)
+    monkeypatch.setattr(
+        manager_module.fr,
+        "async_get",
+        lambda hass: SimpleNamespace(
+            async_get_floor=lambda floor_id: SimpleNamespace(
+                floor_id=floor_id, name="Leer"
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        manager_module.ar,
+        "async_get",
+        lambda hass: SimpleNamespace(async_list_areas=lambda: []),
+    )
+
+    with pytest.raises(ValidationError, match="no assigned areas"):
+        await manager.async_create_task(
+            chore_type.id,
+            manager.today(),
+            floor_id="leer",
         )
 
 
@@ -316,6 +364,16 @@ async def test_recurring_floor_assignment_is_materialized(manager, monkeypatch):
     monkeypatch.setattr(
         manager_module.fr, "async_get", lambda hass: registry
     )
+    monkeypatch.setattr(
+        manager_module.ar,
+        "async_get",
+        lambda hass: SimpleNamespace(
+            async_list_areas=lambda: [
+                SimpleNamespace(id="schlafzimmer", floor_id="obergeschoss"),
+                SimpleNamespace(id="bad", floor_id="obergeschoss"),
+            ]
+        ),
+    )
     start = manager.today() + timedelta(days=1)
 
     rule = await manager.async_create_recurrence_rule(
@@ -336,6 +394,9 @@ async def test_recurring_floor_assignment_is_materialized(manager, monkeypatch):
     assert len(generated) == 1
     assert generated[0].floor_id == "obergeschoss"
     assert generated[0].area_id is None
+    assert generated[0].base_race_points == 5
+    assert generated[0].points_multiplier == 2
+    assert generated[0].race_points == 10
 
 
 async def test_monthly_rule_uses_last_day_for_short_month(manager):
