@@ -78,7 +78,13 @@
       this._saving = false;
       this._notice = "";
       this._error = "";
-      this._data = { participants: [], choreTypes: [], tasks: [], areas: [] };
+      this._data = {
+        participants: [],
+        choreTypes: [],
+        tasks: [],
+        areas: [],
+        recurrenceRules: [],
+      };
     }
 
     static getStubConfig() {
@@ -120,10 +126,19 @@
           this._hass.callWS({ type: "chore_race/get_tasks" }),
           this._hass.callWS({ type: "config/area_registry/list" }),
         ]);
+        let recurrenceRules = [];
+        try {
+          recurrenceRules = await this._hass.callWS({
+            type: "chore_race/get_recurrence_rules",
+          });
+        } catch (_error) {
+          // Older backends do not expose recurrence management yet.
+        }
         this._data = {
           participants,
           choreTypes,
           tasks,
+          recurrenceRules,
           areas: [...areas].sort((a, b) =>
             String(a.name).localeCompare(String(b.name), "de"),
           ),
@@ -144,6 +159,23 @@
       this._render();
       try {
         await this._hass.callService("chore_race", service, payload);
+        this._notice = successMessage;
+        await this._load();
+      } catch (error) {
+        this._error = messageFor(error);
+      } finally {
+        this._saving = false;
+        this._render();
+      }
+    }
+
+    async _submitWS(type, payload, successMessage) {
+      this._saving = true;
+      this._notice = "";
+      this._error = "";
+      this._render();
+      try {
+        await this._hass.callWS({ type, ...payload });
         this._notice = successMessage;
         await this._load();
       } catch (error) {
@@ -256,6 +288,58 @@
         ?.addEventListener("input", updateScheduleFields);
       updateScheduleFields();
 
+      this.shadowRoot.querySelectorAll("[data-edit-chore]").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const values = new FormData(event.currentTarget);
+          this._submit(
+            "update_chore_type",
+            {
+              chore_type_id: event.currentTarget.dataset.editChore,
+              name: values.get("name").trim(),
+              default_race_points: Number(values.get("points")),
+              difficulty: values.get("difficulty") || null,
+              adult_only: values.get("adult_only") === "on",
+              confirmation_required:
+                values.get("confirmation_required") === "on",
+            },
+            "Aufgabentyp wurde aktualisiert.",
+          );
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-disable-chore]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (!window.confirm("Diesen Aufgabentyp wirklich deaktivieren?")) return;
+          this._submit(
+            "update_chore_type",
+            { chore_type_id: button.dataset.disableChore, active: false },
+            "Aufgabentyp wurde deaktiviert.",
+          );
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-toggle-rule]").forEach((button) => {
+        button.addEventListener("click", () =>
+          this._submitWS(
+            "chore_race/update_recurrence_rule",
+            {
+              rule_id: button.dataset.toggleRule,
+              active: button.dataset.active !== "true",
+            },
+            "Wiederholungsregel wurde aktualisiert.",
+          ),
+        );
+      });
+      this.shadowRoot.querySelectorAll("[data-delete-rule]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (!window.confirm("Diese Wiederholungsregel endgültig entfernen?")) return;
+          this._submitWS(
+            "chore_race/delete_recurrence_rule",
+            { rule_id: button.dataset.deleteRule },
+            "Wiederholungsregel wurde entfernt.",
+          );
+        });
+      });
+
       this.shadowRoot
         .querySelector('[data-form="task"]')
         ?.addEventListener("submit", (event) => {
@@ -345,16 +429,76 @@
         return '<p class="empty">Noch keine Aufgabentypen angelegt.</p>';
       }
       return this._data.choreTypes
-        .map(
-          (item) => `<li>
+        .map((item) => {
+          const difficultyOptions = [
+            ["", "Keine"],
+            ["easy", "Leicht"],
+            ["medium", "Mittel"],
+            ["hard", "Schwer"],
+          ]
+            .map(
+              ([value, label]) =>
+                `<option value="${value}" ${item.difficulty === value ? "selected" : ""}>${label}</option>`,
+            )
+            .join("");
+          return `<li class="manageable ${item.active ? "" : "inactive"}">
             <span class="task-icon"><ha-icon icon="${escapeHtml(item.icon || "mdi:check")}"></ha-icon></span>
-            <span><strong>${escapeHtml(item.name)}</strong>
-              <small>${item.default_race_points} Punkte${
-                item.difficulty ? ` · ${escapeHtml(item.difficulty)}` : ""
-              }</small></span>
-          </li>`,
-        )
+            <details>
+              <summary><strong>${escapeHtml(item.name)}</strong>
+                <small>${item.default_race_points} Punkte · ${item.active ? "Aktiv" : "Inaktiv"}${
+                  item.adult_only ? " · Nur Erwachsene" : ""
+                }${item.confirmation_required ? " · Bestätigung" : ""}</small>
+              </summary>
+              <form class="compact-form" data-edit-chore="${escapeHtml(item.id)}">
+                <label>Name<input name="name" required maxlength="100"
+                  value="${escapeHtml(item.name)}"></label>
+                <div class="row">
+                  <label>Punkte<input name="points" type="number" min="0" max="1000"
+                    required value="${item.default_race_points}"></label>
+                  <label>Schwierigkeit<select name="difficulty">${difficultyOptions}</select></label>
+                </div>
+                <label class="check"><input name="adult_only" type="checkbox"
+                  ${item.adult_only ? "checked" : ""}> Nur Erwachsene</label>
+                <label class="check"><input name="confirmation_required" type="checkbox"
+                  ${item.confirmation_required ? "checked" : ""}> Bestätigung erforderlich</label>
+                <div class="actions"><button>Speichern</button>
+                  ${
+                    item.active
+                      ? `<button type="button" class="secondary" data-disable-chore="${escapeHtml(item.id)}">Deaktivieren</button>`
+                      : ""
+                  }</div>
+              </form>
+            </details>
+          </li>`;
+        })
         .join("");
+    }
+
+    _recurrenceRuleList() {
+      const choreById = Object.fromEntries(
+        this._data.choreTypes.map((item) => [item.id, item]),
+      );
+      if (!this._data.recurrenceRules.length) {
+        return '<p class="empty">Noch keine verwaltbaren Wiederholungsregeln.</p>';
+      }
+      const frequency = {
+        days: (rule) => `Alle ${rule.interval || 1} Tage`,
+        monthly: () => "Monatlich",
+        yearly: () => "Jährlich",
+      };
+      return `<ul>${this._data.recurrenceRules
+        .map((rule) => `<li class="${rule.active ? "" : "inactive"}">
+          <span class="task-icon"><ha-icon icon="mdi:calendar-sync"></ha-icon></span>
+          <span><strong>${escapeHtml(choreById[rule.chore_type_id]?.name || "Aufgabe")}</strong>
+            <small>${escapeHtml(frequency[rule.frequency]?.(rule) || rule.frequency)}
+              · ab ${escapeHtml(rule.start_date)} · ${rule.active ? "Aktiv" : "Pausiert"}</small></span>
+          <span class="rule-actions">
+            <button class="secondary" data-toggle-rule="${escapeHtml(rule.id)}"
+              data-active="${rule.active}">${rule.active ? "Pausieren" : "Aktivieren"}</button>
+            <button class="danger" data-delete-rule="${escapeHtml(rule.id)}">Entfernen</button>
+          </span>
+        </li>`)
+        .join("")}</ul>`;
     }
 
     _taskList() {
@@ -493,6 +637,8 @@
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
             </form>
           </div>
+          <section class="rules"><h3>Wiederholungsregeln</h3>
+            ${this._recurrenceRuleList()}</section>
           <section class="tasks"><h3>Offene Aufgaben</h3><ul>${this._taskList()}</ul></section>
         </ha-card>`;
       this._bindEvents();
@@ -529,7 +675,7 @@
         .refresh { width:42px; height:42px; padding:0; font-size:22px; border-radius:14px; }
         .forms { display:grid; grid-template-columns:1fr;
           gap:14px; margin-top:20px; align-items:start; }
-        form,.tasks,.types { padding:16px; border:1px solid var(--line);
+        form,.tasks,.types,.rules { padding:16px; border:1px solid var(--line);
           border-radius:18px; background:var(--surface-raised); }
         label { display:grid; gap:6px; margin:10px 0; color:var(--muted);
           font-size:12px; font-weight:700; }
@@ -561,11 +707,21 @@
           background:color-mix(in srgb,var(--error-color,#db4437) 14%,var(--surface)); }
         .schedule-preview { margin:4px 0 10px; color:var(--muted); font-size:12px; }
         [hidden] { display:none !important; }
-        .tasks,.types { margin-top:14px; }
+        .tasks,.types,.rules { margin-top:14px; }
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
         li { display:flex; gap:10px; align-items:center; padding:10px; border-radius:12px;
           background:color-mix(in srgb,var(--surface-raised) 92%,var(--accent)); }
+        li > span:nth-child(2),li details { min-width:0; flex:1; }
+        li.inactive { opacity:.68; }
+        summary { cursor:pointer; }
+        summary small { font-weight:400; }
+        .compact-form { margin-top:10px; padding:12px; border-radius:12px; }
+        .actions,.rule-actions { display:flex; flex-wrap:wrap; gap:8px; }
+        .actions button,.rule-actions button { width:auto; margin:0; }
+        button.secondary { background:var(--surface); }
+        button.danger { color:var(--primary-text-color);
+          background:color-mix(in srgb,var(--error-color,#db4437) 14%,var(--surface)); }
         li small { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
         .task-icon { display:grid; place-items:center; flex:0 0 32px; height:32px;
           color:#fff; background:var(--accent); border-radius:10px; }
@@ -575,7 +731,8 @@
           ha-card { padding:16px; border-radius:18px; }
           header { align-items:flex-start; }
           h2 { overflow-wrap:anywhere; }
-          form,.tasks,.types { padding:13px; }
+          form,.tasks,.types,.rules { padding:13px; }
+          .rule-actions { width:100%; padding-left:42px; }
         }
       `;
     }

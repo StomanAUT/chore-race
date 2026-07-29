@@ -154,6 +154,37 @@ async def test_monthly_rule_uses_last_day_for_short_month(manager):
     assert not manager._rule_is_due(rule, date(2027, 2, 27))
 
 
+async def test_recurrence_rule_can_be_updated_and_deactivated(manager):
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Müll", 3)
+    rule = await manager.async_create_recurrence_rule(
+        chore_type.id, date(2027, 7, 1), frequency="days"
+    )
+
+    updated = await manager.async_update_recurrence_rule(
+        rule["id"], interval=2, active=False
+    )
+
+    assert updated["interval"] == 2
+    assert updated["active"] is False
+    assert await manager.async_materialize_recurrences(date(2027, 7, 3)) == 0
+
+
+async def test_deleting_recurrence_rule_preserves_generated_tasks(manager):
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Müll", 3)
+    start = manager.today()
+    rule = await manager.async_create_recurrence_rule(
+        chore_type.id, start, frequency="days"
+    )
+    task_ids = set(manager.data.tasks)
+
+    await manager.async_delete_recurrence_rule(rule["id"])
+
+    assert rule["id"] not in manager.data.recurrence_rules
+    assert set(manager.data.tasks) == task_ids
+
+
 async def test_child_cannot_complete_adult_only_task_without_permission(manager):
     await manager.async_load()
     child = await manager.async_create_participant("Kind")

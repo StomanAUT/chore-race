@@ -85,6 +85,22 @@ def websocket_get_settings(
         connection.send_result(msg["id"], manager.data.settings.to_dict())
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): "chore_race/get_recurrence_rules"}
+)
+@callback
+def websocket_get_recurrence_rules(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return recurrence rules for the planner."""
+    if (manager := _require_manager(hass, connection, msg)) is not None:
+        connection.send_result(
+            msg["id"], list(manager.data.recurrence_rules.values())
+        )
+
+
 @websocket_api.require_admin
 @websocket_api.async_response
 @websocket_api.websocket_command(
@@ -303,15 +319,80 @@ async def websocket_update_settings(
     connection.send_result(msg["id"], settings.to_dict())
 
 
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/update_recurrence_rule",
+        vol.Required("rule_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("start_date"): vol.Coerce(date.fromisoformat),
+        vol.Optional("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Optional("interval"): vol.All(int, vol.Range(min=1, max=365)),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("active"): bool,
+    }
+)
+async def websocket_update_recurrence_rule(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update or deactivate a recurrence rule."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value for key, value in msg.items() if key not in {"id", "type", "rule_id"}
+    }
+    try:
+        rule = await manager.async_update_recurrence_rule(
+            msg["rule_id"], **changes
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], rule)
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_recurrence_rule",
+        vol.Required("rule_id"): _ID,
+    }
+)
+async def websocket_delete_recurrence_rule(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete a recurrence rule without deleting generated tasks."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_recurrence_rule(msg["rule_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
+
+
 def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
     """Register read and admin-only planner commands."""
     for command in (
         websocket_get_areas,
         websocket_get_settings,
+        websocket_get_recurrence_rules,
         websocket_create_participant,
         websocket_update_participant,
         websocket_create_chore_type,
         websocket_create_task,
         websocket_update_settings,
+        websocket_update_recurrence_rule,
+        websocket_delete_recurrence_rule,
     ):
         websocket_api.async_register_command(hass, command)

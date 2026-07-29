@@ -364,6 +364,61 @@ class ChoreRaceManager:
         await self.async_materialize_recurrences(self.today())
         return rule
 
+    async def async_update_recurrence_rule(
+        self, rule_id: str, **changes: Any
+    ) -> dict[str, Any]:
+        """Update future recurrence behavior without rewriting existing tasks."""
+        allowed = {
+            "chore_type_id",
+            "start_date",
+            "frequency",
+            "interval",
+            "area_id",
+            "preferred_participant_id",
+            "active",
+        }
+        if unknown := set(changes) - allowed:
+            raise ValidationError(f"Unknown recurrence fields: {sorted(unknown)}")
+        async with self._mutation_lock:
+            rule = self._data.recurrence_rules.get(rule_id)
+            if rule is None:
+                raise NotFoundError("Recurrence rule not found")
+            if "chore_type_id" in changes:
+                if changes["chore_type_id"] not in self._data.chore_types:
+                    raise NotFoundError("Chore type not found")
+            if "start_date" in changes:
+                start_date = changes["start_date"]
+                if not isinstance(start_date, date):
+                    raise ValidationError("start_date must be a date")
+                changes["start_date"] = start_date.isoformat()
+            if (
+                "frequency" in changes
+                and changes["frequency"] not in {"days", "monthly", "yearly"}
+            ):
+                raise ValidationError("frequency must be days, monthly or yearly")
+            if "interval" in changes:
+                interval = changes["interval"]
+                if isinstance(interval, bool) or not 1 <= interval <= 365:
+                    raise ValidationError("interval must be between 1 and 365")
+            if changes.get("preferred_participant_id") is not None:
+                self._require_participant(changes["preferred_participant_id"])
+            if (
+                changes.get("area_id") is not None
+                and ar.async_get(self.hass).async_get_area(changes["area_id"]) is None
+            ):
+                raise ValidationError("Home Assistant area does not exist")
+            rule.update(changes)
+            await self._async_commit()
+            return rule
+
+    async def async_delete_recurrence_rule(self, rule_id: str) -> None:
+        """Delete a recurrence rule while preserving materialized tasks."""
+        async with self._mutation_lock:
+            if rule_id not in self._data.recurrence_rules:
+                raise NotFoundError("Recurrence rule not found")
+            del self._data.recurrence_rules[rule_id]
+            await self._async_commit()
+
     @staticmethod
     def _rule_is_due(rule: dict[str, Any], day: date) -> bool:
         start = date.fromisoformat(rule["start_date"])

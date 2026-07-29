@@ -21,10 +21,12 @@ from .const import (
     SERVICE_CREATE_PARTICIPANT,
     SERVICE_CREATE_RECURRENCE_RULE,
     SERVICE_CREATE_TASK,
+    SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_DELETE_TASK,
     SERVICE_UNDO_COMPLETION,
     SERVICE_UPDATE_CHORE_TYPE,
     SERVICE_UPDATE_PARTICIPANT,
+    SERVICE_UPDATE_RECURRENCE_RULE,
 )
 from .errors import ChoreRaceError
 from .manager import ChoreRaceManager
@@ -126,6 +128,21 @@ CREATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
     }
 )
+UPDATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("rule_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("start_date"): cv.date,
+        vol.Optional("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Optional("interval"): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=365)
+        ),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("active"): cv.boolean,
+    }
+)
+DELETE_RECURRENCE_RULE_SCHEMA = vol.Schema({vol.Required("rule_id"): _ID})
 COMPLETE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("task_id"): _ID,
@@ -142,6 +159,8 @@ ADMIN_SERVICES = {
     SERVICE_UPDATE_CHORE_TYPE,
     SERVICE_CREATE_TASK,
     SERVICE_CREATE_RECURRENCE_RULE,
+    SERVICE_UPDATE_RECURRENCE_RULE,
+    SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_UNDO_COMPLETION,
     SERVICE_DELETE_TASK,
 }
@@ -178,6 +197,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 result = await manager.async_create_recurrence_rule(
                     start_date=start_date, **values
                 )
+            elif call.service == SERVICE_UPDATE_RECURRENCE_RULE:
+                rule_id = values.pop("rule_id")
+                result = await manager.async_update_recurrence_rule(
+                    rule_id, **values
+                )
+            elif call.service == SERVICE_DELETE_RECURRENCE_RULE:
+                await manager.async_delete_recurrence_rule(**values)
+                return {} if call.return_response else None
             elif call.service == SERVICE_COMPLETE_TASK:
                 result = await manager.async_complete_task(**values)
             elif call.service == SERVICE_UNDO_COMPLETION:
@@ -200,6 +227,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_UPDATE_CHORE_TYPE: UPDATE_CHORE_TYPE_SCHEMA,
         SERVICE_CREATE_TASK: CREATE_TASK_SCHEMA,
         SERVICE_CREATE_RECURRENCE_RULE: CREATE_RECURRENCE_RULE_SCHEMA,
+        SERVICE_UPDATE_RECURRENCE_RULE: UPDATE_RECURRENCE_RULE_SCHEMA,
+        SERVICE_DELETE_RECURRENCE_RULE: DELETE_RECURRENCE_RULE_SCHEMA,
         SERVICE_COMPLETE_TASK: COMPLETE_TASK_SCHEMA,
         SERVICE_UNDO_COMPLETION: UNDO_COMPLETION_SCHEMA,
         SERVICE_DELETE_TASK: DELETE_TASK_SCHEMA,

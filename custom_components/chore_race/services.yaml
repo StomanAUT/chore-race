@@ -64,6 +64,52 @@ create_recurrence_rule:
       selector:
         text:
 
+update_recurrence_rule:
+  name: Update recurrence rule
+  description: Update or deactivate a recurrence rule; existing tasks remain unchanged.
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+    chore_type_id:
+      selector:
+        text:
+    start_date:
+      selector:
+        date:
+    frequency:
+      selector:
+        select:
+          options:
+            - days
+            - monthly
+            - yearly
+    interval:
+      selector:
+        number:
+          min: 1
+          max: 365
+          mode: box
+    area_id:
+      selector:
+        area:
+    preferred_participant_id:
+      selector:
+        text:
+    active:
+      selector:
+        boolean:
+
+delete_recurrence_rule:
+  name: Delete recurrence rule
+  description: Delete a recurrence rule while preserving tasks it already created.
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+
 update_participant:
   name: Update participant
   description: Update participant fields without changing the stable ID.
