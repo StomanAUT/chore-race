@@ -26,11 +26,13 @@ def main() -> None:
     position = ((side - image.width) // 2, (side - image.height) // 2)
     canvas.alpha_composite(image, position)
 
+    sizes = ((256, "icon.png"), (512, "icon@2x.png"))
     for output in OUTPUTS:
         output.mkdir(parents=True, exist_ok=True)
-        for size, filename in ((256, "icon.png"), (512, "icon@2x.png")):
+        for size, filename in sizes:
             exported = canvas.resize((size, size), Image.Resampling.LANCZOS)
             exported.save(output / filename, optimize=True)
+            exported.save(output / f"dark_{filename}", optimize=True)
 
 
 if __name__ == "__main__":
