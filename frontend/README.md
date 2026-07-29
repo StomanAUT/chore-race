@@ -11,8 +11,10 @@ The card visualizes and operates:
 - team task progress from the existing `chore_race/get_state` command;
 - participant metadata from `chore_race/get_participants`;
 - today's open race tasks as responsive image-first cards;
-- a touch-friendly participant picker for completing a task during a race;
+- a touch-friendly driver, copilot and fair-play picker during a race;
 - immediate task and leaderboard refresh after a successful completion;
+- ranked live scoring with base, streak, fair-play and copilot breakdowns;
+- a unique champion result after the finish;
 - automatic and configurable reduced-motion behavior;
 - safe connection cleanup, bounded refresh intervals, stale-request rejection,
   and last-known-state display when an API call fails.
@@ -77,7 +79,8 @@ system preference.
 ## Race completion flow
 
 While `chore_race/get_race_state` reports `running`, each open task exposes an
-**Erledigt** action. It opens a participant picker and calls
+**Erledigt** action. It opens a two-step scoring dialog for the driver and an
+optional copilot or fair-play bonus, then calls
 `chore_race/complete_race_task`. The backend remains authoritative for active
 race state, participant permissions, adult-only chores, duplicate completion,
 scoring, and persistence. Ready and finished races never show a misleading

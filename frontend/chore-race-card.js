@@ -132,6 +132,9 @@
       this._participants = [];
       this._areas = {};
       this._selectedTaskId = undefined;
+      this._selectedParticipantId = undefined;
+      this._selectedCopilotId = undefined;
+      this._fairPlay = false;
       this._actionBusy = false;
       this._actionError = undefined;
       this._onMotionChange = () => this._render();
@@ -303,10 +306,11 @@
       this._render();
     }
 
-    async _completeRaceTask(participantId) {
+    async _completeRaceTask() {
       if (
         !this._hass?.callWS ||
         !this._selectedTaskId ||
+        !this._selectedParticipantId ||
         this._actionBusy ||
         this._data?.raceState?.status !== "running"
       ) {
@@ -319,9 +323,16 @@
         const raceState = await this._hass.callWS({
           type: "chore_race/complete_race_task",
           task_id: this._selectedTaskId,
-          participant_id: participantId,
+          participant_id: this._selectedParticipantId,
+          ...(this._selectedCopilotId
+            ? { copilot_participant_id: this._selectedCopilotId }
+            : {}),
+          fair_play: this._fairPlay,
         });
         this._selectedTaskId = undefined;
+        this._selectedParticipantId = undefined;
+        this._selectedCopilotId = undefined;
+        this._fairPlay = false;
         this._raceReceivedAt = Date.now();
         this._data = {
           ...this._data,
@@ -372,20 +383,51 @@
         button.addEventListener("click", () => {
           if (this._data?.raceState?.status !== "running") return;
           this._selectedTaskId = button.dataset.completeTask;
+          this._selectedParticipantId = undefined;
+          this._selectedCopilotId = undefined;
+          this._fairPlay = false;
           this._actionError = undefined;
           this._render();
         });
       });
       this.shadowRoot.querySelectorAll("[data-participant]").forEach((button) => {
-        button.addEventListener("click", () =>
-          this._completeRaceTask(button.dataset.participant),
-        );
+        button.addEventListener("click", () => {
+          this._selectedParticipantId = button.dataset.participant;
+          if (this._selectedCopilotId === this._selectedParticipantId) {
+            this._selectedCopilotId = undefined;
+          }
+          this._actionError = undefined;
+          this._render();
+        });
       });
+      this.shadowRoot.querySelector("[data-copilot]")?.addEventListener(
+        "change",
+        (event) => {
+          this._selectedCopilotId = event.currentTarget.value || undefined;
+          if (this._selectedCopilotId) this._fairPlay = false;
+          this._render();
+        },
+      );
+      this.shadowRoot.querySelector("[data-fair-play]")?.addEventListener(
+        "change",
+        (event) => {
+          this._fairPlay = event.currentTarget.checked;
+          if (this._fairPlay) this._selectedCopilotId = undefined;
+          this._render();
+        },
+      );
+      this.shadowRoot.querySelector("[data-confirm-completion]")?.addEventListener(
+        "click",
+        () => this._completeRaceTask(),
+      );
       this.shadowRoot.querySelector("[data-close-picker]")?.addEventListener(
         "click",
         () => {
           if (this._actionBusy) return;
           this._selectedTaskId = undefined;
+          this._selectedParticipantId = undefined;
+          this._selectedCopilotId = undefined;
+          this._fairPlay = false;
           this._actionError = undefined;
           this._render();
         },
@@ -489,11 +531,16 @@
               const avatar = racer.avatar
                 ? `<img src="${escapeHtml(racer.avatar)}" alt="" />`
                 : `<span aria-hidden="true">${initial}</span>`;
+              const bonuses =
+                (Number(racer.fair_play_bonus) || 0) +
+                (Number(racer.streak_bonus) || 0) +
+                (Number(racer.copilot_points) || 0);
               return `
                 <div class="lane" style="--lane: ${index};">
                   <div class="lane-heading">
-                    <div class="driver">${avatar}<strong>${name}</strong></div>
-                    <span>${points} P</span>
+                    <div class="driver">${avatar}<strong>${name}</strong>
+                      ${racer.rank ? `<small>#${racer.rank}</small>` : ""}</div>
+                    <span>${points} P${bonuses ? `<small> · ${bonuses} Bonus</small>` : ""}</span>
                   </div>
                   <div class="track" role="progressbar"
                     aria-label="${name}: ${points} von ${target} Punkten"
@@ -553,16 +600,20 @@
             .join("")
         : `<div class="empty task-empty">Keine offenen Aufgaben für heute.</div>`;
 
+      const selectedParticipant = this._participants.find(
+        (participant) => participant.id === this._selectedParticipantId,
+      );
       const participantPicker = this._selectedTaskId
         ? `<div class="picker-backdrop" role="presentation">
             <section class="picker" role="dialog" aria-modal="true"
               aria-labelledby="race-picker-title">
               <div class="picker-heading">
                 <div><small>AUFGABE ERLEDIGT</small>
-                  <h3 id="race-picker-title">Wer war's?</h3></div>
+                  <h3 id="race-picker-title">Punkte vergeben</h3></div>
                 <button class="close" data-close-picker aria-label="Schließen"
                   ${this._actionBusy ? "disabled" : ""}>×</button>
               </div>
+              <p class="picker-step"><strong>1</strong> Wer hat die Aufgabe erledigt?</p>
               <div class="participant-grid">
                 ${this._participants.length
                   ? this._participants
@@ -578,7 +629,11 @@
                             )}</span>`;
                         return `<button data-participant="${escapeHtml(participant.id)}"
                           ${this._actionBusy || restricted ? "disabled" : ""}
-                          class="${restricted ? "restricted" : ""}">
+                          class="${restricted ? "restricted" : ""} ${
+                            participant.id === this._selectedParticipantId
+                              ? "selected"
+                              : ""
+                          }">
                           ${avatar}<strong>${escapeHtml(participant.name)}</strong>
                           ${restricted ? "<small>Nur Erwachsene</small>" : ""}
                         </button>`;
@@ -586,10 +641,79 @@
                       .join("")
                   : `<p>Keine aktiven Teilnehmer verfügbar.</p>`}
               </div>
+              ${
+                selectedParticipant
+                  ? `<div class="bonus-panel">
+                      <p class="picker-step"><strong>2</strong> Optionaler Team-Bonus</p>
+                      <label>Copilot
+                        <select data-copilot ${this._actionBusy ? "disabled" : ""}>
+                          <option value="">Ohne Copilot</option>
+                          ${this._participants
+                            .filter(
+                              (participant) =>
+                                participant.id !== selectedParticipant.id &&
+                                !(
+                                  selectedTask?.adult_only &&
+                                  participant.role !== "adult" &&
+                                  !participant.can_do_restricted_tasks
+                                ),
+                            )
+                            .map(
+                              (participant) =>
+                                `<option value="${escapeHtml(participant.id)}" ${
+                                  participant.id === this._selectedCopilotId
+                                    ? "selected"
+                                    : ""
+                                }>${escapeHtml(participant.name)}</option>`,
+                            )
+                            .join("")}
+                        </select>
+                      </label>
+                      <label class="fair-play-option">
+                        <input type="checkbox" data-fair-play
+                          ${this._fairPlay ? "checked" : ""}
+                          ${this._selectedCopilotId || this._actionBusy ? "disabled" : ""}>
+                        <span><strong>Fair Play</strong>
+                          <small>Bonus für besonders faires, selbstständiges Erledigen</small></span>
+                      </label>
+                      <p class="bonus-note">Copilot und Fair Play sind bewusst nicht kombinierbar.</p>
+                    </div>
+                    <button class="confirm-completion" data-confirm-completion
+                      ${this._actionBusy ? "disabled" : ""}>
+                      ${this._actionBusy ? "Punkte werden gespeichert …" : "Abschluss bestätigen"}
+                    </button>`
+                  : ""
+              }
               ${this._actionBusy ? `<p class="action-status">Punkte werden gespeichert …</p>` : ""}
               ${this._actionError ? `<p class="action-error">${escapeHtml(this._actionError)}</p>` : ""}
             </section>
           </div>`
+        : "";
+      const lastCompletion = race.last_completion;
+      const scoreFeedback =
+        lastCompletion && status !== "ready"
+          ? `<aside class="score-feedback">
+              <span>LETZTE WERTUNG</span>
+              <strong>${escapeHtml(lastCompletion.participant_name)}
+                +${Number(lastCompletion.total_points) || 0}</strong>
+              <small>${escapeHtml(lastCompletion.task_name)}${
+                lastCompletion.copilot_name
+                  ? ` · Copilot ${escapeHtml(lastCompletion.copilot_name)}
+                    +${Number(lastCompletion.copilot_points) || 0}`
+                  : lastCompletion.fair_play_bonus
+                    ? ` · Fair Play +${Number(lastCompletion.fair_play_bonus)}`
+                    : lastCompletion.streak_bonus
+                      ? ` · Serie +${Number(lastCompletion.streak_bonus)}`
+                      : ""
+              }</small>
+            </aside>`
+          : "";
+      const champion = race.champion
+        ? `<aside class="champion">
+            <span>🏆 CHORE RACE CHAMPION</span>
+            <strong>${escapeHtml(race.champion.name)}</strong>
+            <small>${Number(race.champion.points) || 0} Punkte</small>
+          </aside>`
         : "";
 
       this.shadowRoot.innerHTML = `
@@ -646,6 +770,7 @@
               ? `<p class="action-error race-action-error">${escapeHtml(this._actionError)}</p>`
               : ""
           }
+          ${champion || scoreFeedback}
           <section class="tasks" aria-label="Offene Race-Aufgaben">
             ${taskCards}
           </section>
@@ -758,6 +883,17 @@
           background:transparent; border:1px solid var(--line); font-size:13px; }
         .race-action-error { margin:-6px 0 18px; }
         .race-hint { max-width:145px; text-align:right; }
+        .score-feedback,.champion { display:grid; gap:3px; margin:0 0 18px;
+          padding:14px 16px; border:1px solid var(--line); border-radius:16px;
+          background:color-mix(in srgb,var(--accent) 10%,var(--surface-raised)); }
+        .score-feedback span,.champion span { color:var(--accent); font-size:10px;
+          font-weight:850; letter-spacing:.12em; }
+        .score-feedback strong,.champion strong { color:var(--ink); font-size:18px; }
+        .score-feedback small,.champion small { color:var(--muted); font-size:12px; }
+        .champion { text-align:center; background:
+          radial-gradient(circle at 50% 0%,rgba(255,193,7,.2),transparent 66%),
+          var(--surface-raised); }
+        .champion strong { font-size:26px; }
         .picker-backdrop { position:fixed; z-index:20; inset:0; display:grid;
           place-items:center; padding:18px; background:rgba(5,10,20,.68); }
         .picker { width:min(100%,520px); max-height:min(82vh,720px); overflow:auto;
@@ -773,16 +909,41 @@
         .participant-grid button { min-height:112px; display:grid; place-items:center;
           gap:7px; padding:12px; color:var(--ink); background:var(--surface-raised);
           border:1px solid var(--line); }
+        .participant-grid button.selected { border-color:var(--accent);
+          box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);
+          background:color-mix(in srgb,var(--accent) 14%,var(--surface)); }
         .participant-grid button.restricted { cursor:not-allowed; opacity:.46; }
         .participant-grid button small { color:var(--muted); font-size:10px; }
         .participant-grid img, .participant-grid span { width:58px; height:58px;
           display:grid; place-items:center; object-fit:cover; border-radius:50%;
           color:white; background:var(--accent); font-size:22px; }
+        .picker-step { display:flex; align-items:center; gap:8px; margin:12px 0 10px;
+          color:var(--muted); font-size:12px; font-weight:700; }
+        .picker-step > strong { display:grid; place-items:center; width:22px; height:22px;
+          color:var(--ink); border:1px solid var(--line); border-radius:8px;
+          background:color-mix(in srgb,var(--accent) 16%,var(--surface)); }
+        .bonus-panel { margin-top:18px; padding-top:4px; border-top:1px solid var(--line); }
+        .bonus-panel label { display:grid; gap:6px; margin:10px 0; color:var(--muted);
+          font-size:12px; font-weight:750; }
+        .bonus-panel select { width:100%; min-height:46px; padding:8px 10px;
+          color:var(--ink); background:var(--surface-raised);
+          border:1px solid var(--line); border-radius:12px; font:inherit; }
+        .fair-play-option { grid-template-columns:auto 1fr !important;
+          align-items:center; padding:11px 12px; border:1px solid var(--line);
+          border-radius:12px; background:var(--surface-raised); }
+        .fair-play-option input { width:22px; height:22px; }
+        .fair-play-option span { display:grid; gap:2px; }
+        .fair-play-option strong { color:var(--ink); }
+        .fair-play-option small,.bonus-note { color:var(--muted); font-size:10px; }
+        .bonus-note { margin:7px 0 0; }
+        .confirm-completion { width:100%; margin-top:14px; color:white;
+          background:var(--accent); }
         .action-status, .action-error { margin:14px 0 0; text-align:center; font-size:13px; }
         .action-status { color:var(--muted); }
         .action-error { color:var(--error-color,#db4437); }
         .lane-heading { justify-content: space-between; margin-bottom: 6px;
           color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
+        .lane-heading small { color:var(--muted); font-size:10px; font-weight:600; }
         .driver { gap: 8px; }
         .driver > span, .driver > img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
           display: grid; place-items: center; background: var(--accent); color: white; font-size: 11px; font-weight: 800; }
@@ -854,8 +1015,9 @@
     window.customCards = window.customCards || [];
     window.customCards.push({
       type: "chore-race-card",
-      name: "Chore Race (experimental)",
-      description: "Animated team race preview using the Chore Race v0.1 API.",
+      name: "Chore Race",
+      description:
+        "Live family race with task completion, teamwork bonuses and ranking.",
       preview: true,
     });
   }

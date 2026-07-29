@@ -263,6 +263,12 @@
               icon: values.get("icon")?.trim() || "mdi:check",
               image: values.get("image") || null,
               difficulty: values.get("difficulty") || null,
+              streak_enabled: values.get("streak_enabled") === "on",
+              streak_max_bonus: Number(values.get("streak_max_bonus") || 0),
+              default_copilot_points: Number(
+                values.get("default_copilot_points") || 0,
+              ),
+              adult_only: values.get("adult_only") === "on",
             },
             "Aufgabentyp wurde angelegt.",
           );
@@ -351,6 +357,11 @@
               icon: values.get("icon") || null,
               image: values.get("image") || null,
               difficulty: values.get("difficulty") || null,
+              streak_enabled: values.get("streak_enabled") === "on",
+              streak_max_bonus: Number(values.get("streak_max_bonus") || 0),
+              default_copilot_points: Number(
+                values.get("default_copilot_points") || 0,
+              ),
               adult_only: values.get("adult_only") === "on",
               confirmation_required:
                 values.get("confirmation_required") === "on",
@@ -597,7 +608,9 @@
               <summary><strong>${escapeHtml(item.name)}</strong>
                 <small>${item.default_race_points} Punkte · ${item.active ? "Aktiv" : "Inaktiv"}${
                   item.adult_only ? " · Nur Erwachsene" : ""
-                }${item.confirmation_required ? " · Bestätigung" : ""}</small>
+                }${item.streak_enabled ? ` · Serie bis +${item.streak_max_bonus}` : ""}${
+                  item.confirmation_required ? " · Bestätigung" : ""
+                }</small>
                 <span class="edit-hint"><ha-icon icon="mdi:pencil"></ha-icon>
                   Bearbeiten</span>
               </summary>
@@ -617,6 +630,19 @@
                     <small>${TASK_IMAGES.length} Motive anzeigen</small></span></summary>
                   <div>${this._taskImagePicker(item.image)}</div>
                 </details>
+                <fieldset class="race-options">
+                  <legend>Rennwertung</legend>
+                  <label class="check"><input name="streak_enabled" type="checkbox"
+                    ${item.streak_enabled ? "checked" : ""}> Serienbonus aktiv</label>
+                  <div class="row">
+                    <label>Maximaler Serienbonus<input name="streak_max_bonus"
+                      type="number" min="0" max="1000"
+                      value="${Number(item.streak_max_bonus) || 0}"></label>
+                    <label>Copilot-Punkte<input name="default_copilot_points"
+                      type="number" min="0" max="1000"
+                      value="${Number(item.default_copilot_points) || 0}"></label>
+                  </div>
+                </fieldset>
                 <label class="check"><input name="adult_only" type="checkbox"
                   ${item.adult_only ? "checked" : ""}> Nur Erwachsene</label>
                 <label class="check"><input name="confirmation_required" type="checkbox"
@@ -855,6 +881,21 @@
                     <small>${TASK_IMAGES.length} Motive anzeigen</small></span></summary>
                 <div>${this._taskImagePicker()}</div>
               </details>
+              <details class="advanced-options">
+                <summary>Rennwertung festlegen</summary>
+                <fieldset class="race-options">
+                  <label class="check"><input name="streak_enabled"
+                    type="checkbox"> Serienbonus aktiv</label>
+                  <div class="row">
+                    <label>Maximaler Serienbonus<input name="streak_max_bonus"
+                      type="number" min="0" max="1000" value="0"></label>
+                    <label>Copilot-Punkte<input name="default_copilot_points"
+                      type="number" min="0" max="1000" value="1"></label>
+                  </div>
+                  <label class="check"><input name="adult_only"
+                    type="checkbox"> Nur Erwachsene</label>
+                </fieldset>
+              </details>
               <button ${disabled}>Aufgabentyp anlegen</button>
             </form>
             <section class="types"><div class="list-head"><div><h3>Aufgabentypen</h3>
@@ -967,6 +1008,14 @@
         .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         .check { display:flex; flex-direction:row; align-items:center; }
         .check input { width:20px; min-height:20px; }
+        .advanced-options { margin:10px 0; }
+        .advanced-options > summary { padding:10px 12px; color:var(--muted);
+          background:var(--surface); border:1px solid var(--line);
+          border-radius:11px; font-size:12px; font-weight:750; }
+        .race-options { display:grid; gap:2px; margin:10px 0 0; padding:10px 12px;
+          border:1px solid var(--line); border-radius:12px; }
+        .race-options legend { padding:0 5px; color:var(--muted);
+          font-size:11px; font-weight:800; }
         .task-icon ha-icon { width:20px; height:20px; }
         .task-icon img { width:30px; height:30px; object-fit:contain; }
         .image-picker { margin:10px 0; padding:0; border:0; }

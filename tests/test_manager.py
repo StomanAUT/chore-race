@@ -336,3 +336,114 @@ async def test_race_completion_requires_running_session(manager):
         await manager.async_complete_task(
             task.id, participant.id, require_active_race=True
         )
+
+
+async def test_race_scoring_awards_fair_play_streak_and_copilot(manager):
+    driver, chore_type, first_task = await _base_records(manager)
+    copilot = await manager.async_create_participant("Viktoria")
+    await manager.async_update_chore_type(
+        chore_type.id,
+        streak_enabled=True,
+        streak_max_bonus=2,
+        default_copilot_points=2,
+    )
+    race = await manager.async_start_race()
+
+    first = await manager.async_complete_task(
+        first_task.id,
+        driver.id,
+        require_active_race=True,
+        fair_play=True,
+    )
+    second_task = await manager.async_create_task(
+        chore_type.id, manager.today()
+    )
+    second = await manager.async_complete_task(
+        second_task.id,
+        driver.id,
+        require_active_race=True,
+        copilot_participant_id=copilot.id,
+    )
+
+    assert first.base_points_awarded == 5
+    assert first.fair_play_bonus == 1
+    assert first.streak_bonus == 0
+    assert first.total_points_awarded == 6
+    assert second.streak_bonus == 1
+    assert second.copilot_points_awarded == 2
+    assert second.total_points_awarded == 6
+
+    state = manager.race_state(race["race_id"])
+    assert state["leaderboard"][0] == {
+        "participant_id": driver.id,
+        "name": driver.name,
+        "points": 12,
+        "base_points": 10,
+        "fair_play_bonus": 1,
+        "streak_bonus": 1,
+        "copilot_points": 0,
+        "rank": 1,
+    }
+    assert state["leaderboard"][1]["points"] == 2
+    assert state["leaderboard"][1]["copilot_points"] == 2
+    assert state["last_completion"]["participant_name"] == driver.name
+    assert state["last_completion"]["copilot_name"] == copilot.name
+
+
+async def test_race_bonus_validation_and_streak_cap(manager):
+    driver, chore_type, first_task = await _base_records(manager)
+    copilot = await manager.async_create_participant("Julia")
+    await manager.async_update_chore_type(
+        chore_type.id, streak_enabled=True, streak_max_bonus=1
+    )
+    await manager.async_start_race()
+
+    with pytest.raises(
+        ValidationError, match="cannot be combined"
+    ):
+        await manager.async_complete_task(
+            first_task.id,
+            driver.id,
+            require_active_race=True,
+            copilot_participant_id=copilot.id,
+            fair_play=True,
+        )
+    with pytest.raises(ValidationError, match="must be different"):
+        await manager.async_complete_task(
+            first_task.id,
+            driver.id,
+            require_active_race=True,
+            copilot_participant_id=driver.id,
+        )
+
+    await manager.async_complete_task(
+        first_task.id, driver.id, require_active_race=True
+    )
+    second_task = await manager.async_create_task(
+        chore_type.id, manager.today()
+    )
+    third_task = await manager.async_create_task(
+        chore_type.id, manager.today()
+    )
+    second = await manager.async_complete_task(
+        second_task.id, driver.id, require_active_race=True
+    )
+    third = await manager.async_complete_task(
+        third_task.id, driver.id, require_active_race=True
+    )
+    assert second.streak_bonus == 1
+    assert third.streak_bonus == 1
+
+
+async def test_finished_race_exposes_unique_champion_and_ties(manager):
+    driver, _, task = await _base_records(manager)
+    race = await manager.async_start_race()
+    await manager.async_complete_task(
+        task.id, driver.id, require_active_race=True
+    )
+
+    finished = await manager.async_stop_race()
+
+    assert finished["race_id"] == race["race_id"]
+    assert finished["champion"]["participant_id"] == driver.id
+    assert finished["champion"]["points"] == task.race_points

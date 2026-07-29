@@ -152,11 +152,7 @@ class ChoreTask:
 
 @dataclass(slots=True)
 class Completion:
-    """Immutable scoring facts for one active task completion.
-
-    Copilot fields are snapshots reserved for the race engine. Milestone 1
-    always stores zero copilot/fair-play/streak points.
-    """
+    """Immutable scoring facts for one active task completion."""
 
     id: str
     task_id: str

@@ -17,6 +17,32 @@ the same policy.
 - `normal_points_week()` includes only normal completions.
 - Champion and race leaderboard calculations exclusively use race points.
 
+## Race scoring
+
+Race completion snapshots are additive and auditable:
+
+- The driver receives the task's snapshotted race points.
+- Fair play adds the configured household bonus to the driver.
+- A copilot receives the chore type's configured copilot points separately.
+- Fair play and copilot are mutually exclusive for one completion.
+- When enabled on the chore type, the driver's consecutive completions in the
+  same race add `0, 1, 2, ...` streak points up to the configured maximum.
+- Driver and copilot must be different active participants. Restricted chores
+  enforce their participant permission for both roles.
+
+The live leaderboard aggregates exactly one race session, not a calendar-week
+window. It exposes base, fair-play, streak and copilot subtotals. A finished
+race has a champion only when one participant holds a unique positive lead;
+ties deliberately produce no champion.
+
+## Race lifecycle
+
+A session moves from `ready` to `running` and finally `finished`. Only one
+non-expired session can run at a time. Start and stop are administrator-only
+WebSocket commands, while authenticated household clients may complete an open
+task during a running session. Expired sessions are presented as finished and
+are closed persistently when the next session starts.
+
 ## Daily plan semantics
 
 - `completed_tasks_today()` counts completions by their completion timestamp.

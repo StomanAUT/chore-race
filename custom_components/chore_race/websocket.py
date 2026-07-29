@@ -136,12 +136,62 @@ def websocket_get_race_state(
     connection.send_result(msg["id"], manager.race_state())
 
 
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {vol.Required("type"): "chore_race/start_race"}
+)
+async def websocket_start_race(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Start a race from an administrator card."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    try:
+        race_state = await manager.async_start_race()
+    except ChoreRaceError as err:
+        connection.send_error(msg["id"], "chore_race_error", str(err))
+        return
+    connection.send_result(msg["id"], race_state)
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {vol.Required("type"): "chore_race/stop_race"}
+)
+async def websocket_stop_race(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Stop the active race from an administrator card."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    try:
+        race_state = await manager.async_stop_race()
+    except ChoreRaceError as err:
+        connection.send_error(msg["id"], "chore_race_error", str(err))
+        return
+    connection.send_result(msg["id"], race_state)
+
+
 @websocket_api.async_response
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "chore_race/complete_race_task",
         vol.Required("task_id"): vol.All(str, vol.Length(min=1, max=64)),
         vol.Required("participant_id"): vol.All(str, vol.Length(min=1, max=64)),
+        vol.Optional("copilot_participant_id"): vol.All(
+            str, vol.Length(min=1, max=64)
+        ),
+        vol.Optional("fair_play", default=False): bool,
     }
 )
 async def websocket_complete_race_task(
@@ -159,6 +209,8 @@ async def websocket_complete_race_task(
             msg["task_id"],
             msg["participant_id"],
             require_active_race=True,
+            copilot_participant_id=msg.get("copilot_participant_id"),
+            fair_play=msg["fair_play"],
         )
     except ChoreRaceError as err:
         connection.send_error(msg["id"], "chore_race_error", str(err))
@@ -175,6 +227,8 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         websocket_get_chore_types,
         websocket_get_leaderboard,
         websocket_get_race_state,
+        websocket_start_race,
+        websocket_stop_race,
         websocket_complete_race_task,
     ):
         websocket_api.async_register_command(hass, command)

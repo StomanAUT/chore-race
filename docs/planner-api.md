@@ -119,5 +119,33 @@ recurrence rule references the type; otherwise it must be deactivated.
 ```
 
 Settings persist through Home Assistant's versioned integration store. Race
-configuration is exposed now, but Milestone 0.2 does not start a race or run a
-timer.
+configuration is also consumed by the Milestone 0.3 race engine.
+
+## Race WebSocket API
+
+Administrators start and stop a session with:
+
+```json
+{"type": "chore_race/start_race"}
+```
+
+```json
+{"type": "chore_race/stop_race"}
+```
+
+During a running race an authenticated client completes a task with optional
+teamwork scoring:
+
+```json
+{
+  "type": "chore_race/complete_race_task",
+  "task_id": "task-id",
+  "participant_id": "driver-id",
+  "copilot_participant_id": "optional-copilot-id",
+  "fair_play": false
+}
+```
+
+`copilot_participant_id` and `fair_play: true` cannot be combined. The result
+is the updated race state including countdown, open tasks, a ranked scoring
+breakdown, the most recent completion and the champion after a unique win.

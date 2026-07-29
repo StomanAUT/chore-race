@@ -171,6 +171,8 @@ COMPLETE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("task_id"): _ID,
         vol.Required("participant_id"): _ID,
+        vol.Optional("copilot_participant_id"): _ID,
+        vol.Optional("fair_play", default=False): cv.boolean,
     }
 )
 UNDO_COMPLETION_SCHEMA = vol.Schema({vol.Required("completion_id"): _ID})

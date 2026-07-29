@@ -541,12 +541,16 @@ class ChoreRaceManager:
         participant_id: str,
         *,
         require_active_race: bool = False,
+        copilot_participant_id: str | None = None,
+        fair_play: bool = False,
     ) -> Completion:
         """Atomically complete a task once and award normal or race points."""
         async with self._mutation_lock:
             task = self._require_task(task_id)
             participant = self._require_participant(participant_id)
             chore_type = self._data.chore_types[task.chore_type_id]
+            if not isinstance(fair_play, bool):
+                raise ValidationError("fair_play must be a boolean")
             if not participant.active:
                 raise ValidationError("Participant is inactive")
             if (
@@ -565,9 +569,43 @@ class ChoreRaceManager:
             race = self._active_race(now)
             if require_active_race and race is None:
                 raise ConflictError("No race is running")
+            if race is None and (copilot_participant_id or fair_play):
+                raise ConflictError(
+                    "Copilot and fair-play bonuses require a running race"
+                )
+            if copilot_participant_id and fair_play:
+                raise ValidationError(
+                    "Copilot and fair-play bonuses cannot be combined"
+                )
+            copilot = None
+            if copilot_participant_id is not None:
+                copilot = self._require_participant(copilot_participant_id)
+                if copilot.id == participant.id:
+                    raise ValidationError("Driver and copilot must be different")
+                if not copilot.active:
+                    raise ValidationError("Copilot is inactive")
+                if (
+                    chore_type.adult_only
+                    and copilot.role != "adult"
+                    and not copilot.can_do_restricted_tasks
+                ):
+                    raise ValidationError(
+                        "Copilot may not assist with adult-only tasks"
+                    )
             race_id = race["id"] if race is not None else None
+            streak_length = (
+                self._race_driver_completion_count(race_id, participant.id)
+                if race_id is not None
+                else 0
+            )
             score = calculate_completion_score(
-                task, self._data.settings, race_id=race_id
+                task,
+                chore_type,
+                self._data.settings,
+                race_id=race_id,
+                fair_play=fair_play,
+                has_copilot=copilot is not None,
+                streak_length=streak_length,
             )
             completion = Completion(
                 id=self._new_id(),
@@ -577,6 +615,7 @@ class ChoreRaceManager:
                 base_points_awarded=score.base,
                 fair_play_bonus=score.fair_play,
                 streak_bonus=score.streak,
+                copilot_participant_id=copilot.id if copilot else None,
                 copilot_points_awarded=score.copilot,
                 total_points_awarded=score.total,
                 scoring_mode=score.mode,
@@ -592,9 +631,26 @@ class ChoreRaceManager:
                     "task_id": task.id,
                     "participant_id": participant.id,
                     "points": completion.total_points_awarded,
+                    "base_points": completion.base_points_awarded,
+                    "fair_play_bonus": completion.fair_play_bonus,
+                    "streak_bonus": completion.streak_bonus,
+                    "copilot_participant_id": completion.copilot_participant_id,
+                    "copilot_points": completion.copilot_points_awarded,
+                    "race_id": completion.race_id,
                 },
             )
             return completion
+
+    def _race_driver_completion_count(
+        self, race_id: str, participant_id: str
+    ) -> int:
+        """Count active driver completions already earned in one race."""
+        return sum(
+            completion.active
+            and completion.race_id == race_id
+            and completion.participant_id == participant_id
+            for completion in self._data.completions.values()
+        )
 
     def _active_race(self, now: datetime | None = None) -> dict[str, Any] | None:
         """Return the running, non-expired race session."""
@@ -666,8 +722,11 @@ class ChoreRaceManager:
                 "race_id": None,
                 "started_at": None,
                 "ends_at": None,
+                "finished_at": None,
                 "remaining_seconds": 0,
                 "leaderboard": [],
+                "champion": None,
+                "last_completion": None,
                 "current_task": open_tasks[0] if open_tasks else None,
                 "open_tasks": open_tasks,
             }
@@ -678,29 +737,141 @@ class ChoreRaceManager:
             status = RaceStatus.FINISHED.value
         if status != RaceStatus.RUNNING:
             remaining = 0
-        totals = self.race_points_week(race["id"])
-        leaderboard = sorted(
-            (
-                {
-                    "participant_id": participant.id,
-                    "name": participant.name,
-                    "points": totals.get(participant.id, 0),
-                }
-                for participant in self._data.participants.values()
-                if participant.active
-            ),
-            key=lambda item: (-item["points"], item["name"].casefold()),
-        )
+        leaderboard = self._race_leaderboard(race["id"])
+        champion = self._race_champion(leaderboard) if status == "finished" else None
         open_tasks = self._race_open_tasks()
         return {
             "status": status,
             "race_id": race["id"],
             "started_at": race["started_at"],
             "ends_at": race["ends_at"],
+            "finished_at": race.get("finished_at"),
             "remaining_seconds": remaining,
             "leaderboard": leaderboard,
+            "champion": champion,
+            "last_completion": self._race_last_completion(race["id"]),
             "current_task": open_tasks[0] if open_tasks else None,
             "open_tasks": open_tasks,
+        }
+
+    def _race_leaderboard(self, race_id: str) -> list[dict[str, Any]]:
+        """Return exact session totals and an auditable bonus breakdown."""
+        rows: dict[str, dict[str, Any]] = {
+            participant.id: {
+                "participant_id": participant.id,
+                "name": participant.name,
+                "points": 0,
+                "base_points": 0,
+                "fair_play_bonus": 0,
+                "streak_bonus": 0,
+                "copilot_points": 0,
+            }
+            for participant in self._data.participants.values()
+            if participant.active
+        }
+        for completion in self._data.completions.values():
+            if not completion.active or completion.race_id != race_id:
+                continue
+            driver = self._data.participants.get(completion.participant_id)
+            if driver is not None:
+                row = rows.setdefault(
+                    driver.id,
+                    {
+                        "participant_id": driver.id,
+                        "name": driver.name,
+                        "points": 0,
+                        "base_points": 0,
+                        "fair_play_bonus": 0,
+                        "streak_bonus": 0,
+                        "copilot_points": 0,
+                    },
+                )
+                row["base_points"] += completion.base_points_awarded
+                row["fair_play_bonus"] += completion.fair_play_bonus
+                row["streak_bonus"] += completion.streak_bonus
+                row["points"] += completion.total_points_awarded
+            copilot = self._data.participants.get(
+                completion.copilot_participant_id or ""
+            )
+            if copilot is not None:
+                row = rows.setdefault(
+                    copilot.id,
+                    {
+                        "participant_id": copilot.id,
+                        "name": copilot.name,
+                        "points": 0,
+                        "base_points": 0,
+                        "fair_play_bonus": 0,
+                        "streak_bonus": 0,
+                        "copilot_points": 0,
+                    },
+                )
+                row["copilot_points"] += completion.copilot_points_awarded
+                row["points"] += completion.copilot_points_awarded
+        leaderboard = sorted(
+            rows.values(),
+            key=lambda item: (-item["points"], item["name"].casefold()),
+        )
+        previous_points: int | None = None
+        rank = 0
+        for index, row in enumerate(leaderboard, start=1):
+            if row["points"] != previous_points:
+                rank = index
+                previous_points = row["points"]
+            row["rank"] = rank
+        return leaderboard
+
+    @staticmethod
+    def _race_champion(
+        leaderboard: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Return a unique positive session champion, never a tie."""
+        if not leaderboard or leaderboard[0]["points"] <= 0:
+            return None
+        if (
+            len(leaderboard) > 1
+            and leaderboard[0]["points"] == leaderboard[1]["points"]
+        ):
+            return None
+        return dict(leaderboard[0])
+
+    def _race_last_completion(self, race_id: str) -> dict[str, Any] | None:
+        """Return the most recent active completion with presentation names."""
+        completion = max(
+            (
+                item
+                for item in self._data.completions.values()
+                if item.active and item.race_id == race_id
+            ),
+            key=lambda item: item.completed_at,
+            default=None,
+        )
+        if completion is None:
+            return None
+        task = self._data.tasks.get(completion.task_id)
+        chore_type = (
+            self._data.chore_types.get(task.chore_type_id)
+            if task is not None
+            else None
+        )
+        driver = self._data.participants.get(completion.participant_id)
+        copilot = self._data.participants.get(
+            completion.copilot_participant_id or ""
+        )
+        return {
+            "completion_id": completion.id,
+            "task_id": completion.task_id,
+            "task_name": chore_type.name if chore_type else "Aufgabe",
+            "participant_id": completion.participant_id,
+            "participant_name": driver.name if driver else "Teilnehmer",
+            "base_points": completion.base_points_awarded,
+            "fair_play_bonus": completion.fair_play_bonus,
+            "streak_bonus": completion.streak_bonus,
+            "total_points": completion.total_points_awarded,
+            "copilot_participant_id": completion.copilot_participant_id,
+            "copilot_name": copilot.name if copilot else None,
+            "copilot_points": completion.copilot_points_awarded,
+            "completed_at": completion.completed_at.isoformat(),
         }
 
     def _race_open_tasks(self) -> list[dict[str, Any]]:
