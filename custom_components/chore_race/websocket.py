@@ -182,6 +182,63 @@ async def websocket_stop_race(
     connection.send_result(msg["id"], race_state)
 
 
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/reset_race",
+        vol.Optional("race_id"): vol.All(str, vol.Length(min=1, max=64)),
+    }
+)
+async def websocket_reset_race(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Reset one race and reopen only its completed tasks."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    try:
+        race_state = await manager.async_reset_race(msg.get("race_id"))
+    except ChoreRaceError as err:
+        connection.send_error(msg["id"], "chore_race_error", str(err))
+        return
+    connection.send_result(msg["id"], race_state)
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/remove_race_participant",
+        vol.Required("participant_id"): vol.All(
+            str, vol.Length(min=1, max=64)
+        ),
+        vol.Optional("race_id"): vol.All(str, vol.Length(min=1, max=64)),
+    }
+)
+async def websocket_remove_race_participant(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Remove a participant from one race without deactivating them globally."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    try:
+        race_state = await manager.async_remove_race_participant(
+            msg["participant_id"], msg.get("race_id")
+        )
+    except ChoreRaceError as err:
+        connection.send_error(msg["id"], "chore_race_error", str(err))
+        return
+    connection.send_result(msg["id"], race_state)
+
+
 @websocket_api.async_response
 @websocket_api.websocket_command(
     {
@@ -229,6 +286,8 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         websocket_get_race_state,
         websocket_start_race,
         websocket_stop_race,
+        websocket_reset_race,
+        websocket_remove_race_participant,
         websocket_complete_race_task,
     ):
         websocket_api.async_register_command(hass, command)

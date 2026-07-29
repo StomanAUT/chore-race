@@ -43,6 +43,23 @@ WebSocket commands, while authenticated household clients may complete an open
 task during a running session. Expired sessions are presented as finished and
 are closed persistently when the next session starts.
 
+Each session snapshots `participant_ids` from the active household
+participants when it starts. This is a race-local roster: removing somebody
+from a race never deactivates or deletes their global participant record.
+
+Administrators may reset the current race or select a session by `race_id`. A
+reset keeps the session for audit, sets it back to `ready`, records `reset_at`,
+and rebuilds its roster from the participants that are currently globally
+active. Only active completions whose `race_id` matches that session are
+reverted, and their tasks are reopened. Normal completions and completions from
+every other race remain active and keep their points.
+
+Removing a participant from a selected race removes their ID from that
+session's roster. Any active completion in that race where the participant was
+the driver or copilot is reverted as one immutable scoring unit, and its task
+is reopened. Other participants' unrelated completions remain active. The
+operation is available for running, finished, and reset/ready sessions.
+
 ## Daily plan semantics
 
 - `completed_tasks_today()` counts completions by their completion timestamp.

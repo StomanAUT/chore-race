@@ -239,7 +239,16 @@
           const participantById = Object.fromEntries(
             participants.map((participant) => [participant.id, participant]),
           );
-          this._participants = participants.filter((participant) => participant.active);
+          const raceParticipantIds = new Set(
+            raceState.participant_ids ??
+              participants
+                .filter((participant) => participant.active)
+                .map((participant) => participant.id),
+          );
+          this._participants = participants.filter(
+            (participant) =>
+              participant.active && raceParticipantIds.has(participant.id),
+          );
           this._areas = Object.fromEntries(
             places
               .filter((place) => place.kind !== "floor")
@@ -356,19 +365,24 @@
       }
     }
 
-    async _changeRace(action) {
+    async _changeRace(action, payload = {}) {
       if (!this._hass?.callWS || this._actionBusy) return;
-      if (
-        action === "stop_race" &&
-        !window.confirm("Rennen wirklich beenden?")
-      ) {
-        return;
-      }
+      const confirmations = {
+        stop_race: "Rennen wirklich beenden?",
+        reset_race:
+          "Rennen wirklich zurücksetzen? Alle Wertungen dieses Rennens werden rückgängig gemacht und die Aufgaben wieder geöffnet.",
+        remove_race_participant:
+          "Teilnehmer wirklich aus diesem Rennen entfernen? Bereits beteiligte Wertungen werden rückgängig gemacht und deren Aufgaben wieder geöffnet.",
+      };
+      if (confirmations[action] && !window.confirm(confirmations[action])) return;
       this._actionBusy = true;
       this._actionError = undefined;
       this._render();
       try {
-        await this._hass.callWS({ type: `chore_race/${action}` });
+        await this._hass.callWS({
+          type: `chore_race/${action}`,
+          ...payload,
+        });
         await this._load();
       } catch (error) {
         this._actionError = errorMessage(error);
@@ -387,6 +401,19 @@
         "click",
         () => this._changeRace("stop_race"),
       );
+      this.shadowRoot.querySelector("[data-reset-race]")?.addEventListener(
+        "click",
+        () => this._changeRace("reset_race"),
+      );
+      this.shadowRoot
+        .querySelectorAll("[data-remove-race-participant]")
+        .forEach((button) => {
+          button.addEventListener("click", () =>
+            this._changeRace("remove_race_participant", {
+              participant_id: button.dataset.removeRaceParticipant,
+            }),
+          );
+        });
       this.shadowRoot.querySelectorAll("[data-complete-task]").forEach((button) => {
         button.addEventListener("click", () => {
           if (this._data?.raceState?.status !== "running") return;
@@ -547,7 +574,16 @@
                 <div class="lane" style="--lane: ${index};">
                   <div class="lane-heading">
                     <div class="driver">${avatar}<strong>${name}</strong>
-                      ${racer.rank ? `<small>#${racer.rank}</small>` : ""}</div>
+                      ${racer.rank ? `<small>#${racer.rank}</small>` : ""}
+                      ${
+                        isAdmin && race.race_id
+                          ? `<button class="remove-racer"
+                              data-remove-race-participant="${escapeHtml(racer.participant_id)}"
+                              aria-label="${name} aus Rennen entfernen"
+                              title="Aus Rennen entfernen"
+                              ${this._actionBusy ? "disabled" : ""}>×</button>`
+                          : ""
+                      }</div>
                     <span>${points} P${bonuses ? `<small> · ${bonuses} Bonus</small>` : ""}</span>
                   </div>
                   <div class="track" role="progressbar"
@@ -758,6 +794,7 @@
                 : ""
             }
           </section>
+          <div class="race-controls">
           ${
             isAdmin && (status === "ready" || status === "finished")
               ? `<button class="race-control start-race" data-start-race
@@ -775,6 +812,13 @@
                     ${this._actionBusy ? "disabled" : ""}>Rennen beenden</button>`
                 : ""
           }
+          ${
+            isAdmin && race.race_id
+              ? `<button class="race-control reset-race" data-reset-race
+                  ${this._actionBusy ? "disabled" : ""}>Rennen zurücksetzen</button>`
+              : ""
+          }
+          </div>
           ${
             this._actionError && !this._selectedTaskId
               ? `<p class="action-error race-action-error">${escapeHtml(this._actionError)}</p>`
@@ -887,10 +931,16 @@
           outline-offset:2px; }
         button:disabled { cursor:wait; opacity:.6; }
         .complete { flex:0 0 auto; color:white; background:var(--accent); }
-        .race-control { width:100%; min-height:56px; margin:0 0 18px; }
+        .race-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
+          gap:10px; margin:0 0 18px; }
+        .race-control { width:100%; min-height:52px; margin:0; }
         .start-race { color:white; background:var(--accent); font-size:17px; }
         .stop-race { min-height:48px; color:var(--muted);
           background:transparent; border:1px solid var(--line); font-size:13px; }
+        .reset-race { min-height:48px; color:var(--muted);
+          background:color-mix(in srgb,var(--error-color,#db4437) 7%,transparent);
+          border:1px solid color-mix(in srgb,var(--error-color,#db4437) 24%,var(--line));
+          font-size:13px; }
         .race-action-error { margin:-6px 0 18px; }
         .race-hint { max-width:145px; text-align:right; }
         .score-feedback,.champion { display:grid; gap:3px; margin:0 0 18px;
@@ -955,6 +1005,11 @@
           color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
         .lane-heading small { color:var(--muted); font-size:10px; font-weight:600; }
         .driver { gap: 8px; }
+        .remove-racer { min-width:26px; min-height:26px; padding:0;
+          border:1px solid var(--line); border-radius:9px;
+          color:var(--muted); background:transparent; font-size:17px; line-height:1; }
+        .remove-racer:hover { color:var(--error-color,#db4437);
+          border-color:color-mix(in srgb,var(--error-color,#db4437) 38%,var(--line)); }
         .driver > span, .driver > img { width: 24px; height: 24px; border-radius: 50%; object-fit: cover;
           display: grid; place-items: center; background: var(--accent); color: white; font-size: 11px; font-weight: 800; }
         .track { position: relative; height: 45px; overflow: hidden; border-radius: 13px;
@@ -1008,6 +1063,7 @@
           .driver { min-width: 0; }
           .driver strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .tasks { grid-template-columns:1fr; }
+          .race-controls { grid-template-columns:1fr; }
           .task-copy { align-items:stretch; flex-direction:column; }
           .complete { width:100%; }
           .race-hint { max-width:none; text-align:left; }

@@ -8,6 +8,8 @@
     "create_task": {"service": "mdi:clipboard-plus"},
     "update_task": {"service": "mdi:clipboard-edit"},
     "complete_task": {"service": "mdi:check-bold"},
+    "reset_race": {"service": "mdi:restart-alert"},
+    "remove_race_participant": {"service": "mdi:account-minus"},
     "undo_completion": {"service": "mdi:undo"},
     "delete_task": {"service": "mdi:delete"}
   }

@@ -612,6 +612,11 @@ class ChoreRaceManager:
                 raise ConflictError(
                     "Copilot and fair-play bonuses require a running race"
                 )
+            if (
+                race is not None
+                and participant.id not in self._race_participant_ids(race)
+            ):
+                raise ValidationError("Participant is not in this race")
             if copilot_participant_id and fair_play:
                 raise ValidationError(
                     "Copilot and fair-play bonuses cannot be combined"
@@ -623,6 +628,11 @@ class ChoreRaceManager:
                     raise ValidationError("Driver and copilot must be different")
                 if not copilot.active:
                     raise ValidationError("Copilot is inactive")
+                if (
+                    race is not None
+                    and copilot.id not in self._race_participant_ids(race)
+                ):
+                    raise ValidationError("Copilot is not in this race")
                 if (
                     chore_type.adult_only
                     and copilot.role != "adult"
@@ -718,6 +728,11 @@ class ChoreRaceManager:
             race = {
                 "id": race_id,
                 "status": RaceStatus.RUNNING.value,
+                "participant_ids": [
+                    participant.id
+                    for participant in self._data.participants.values()
+                    if participant.active
+                ],
                 "started_at": now.isoformat(),
                 "ends_at": (
                     now
@@ -726,6 +741,7 @@ class ChoreRaceManager:
                     )
                 ).isoformat(),
                 "finished_at": None,
+                "reset_at": None,
             }
             self._data.race_sessions[race_id] = race
             await self._async_commit()
@@ -742,6 +758,97 @@ class ChoreRaceManager:
             race["finished_at"] = now.isoformat()
             await self._async_commit()
             return self.race_state(race["id"], now=now)
+
+    def _race_participant_ids(self, race: dict[str, Any]) -> list[str]:
+        """Return the persisted race roster with a legacy fallback."""
+        if "participant_ids" not in race:
+            race["participant_ids"] = [
+                participant.id
+                for participant in self._data.participants.values()
+                if participant.active
+            ]
+        return race["participant_ids"]
+
+    def _require_race(self, race_id: str | None = None) -> dict[str, Any]:
+        race = self._data.race_sessions.get(race_id) if race_id else None
+        if race is None and self._data.race_sessions:
+            race = max(
+                self._data.race_sessions.values(),
+                key=lambda item: item["started_at"],
+            )
+        if race is None:
+            raise NotFoundError("Race not found")
+        return race
+
+    def _revert_race_completions(
+        self,
+        race_id: str,
+        now: datetime,
+        participant_id: str | None = None,
+    ) -> int:
+        """Reopen tasks for active completions matching one race and participant."""
+        reverted = 0
+        for completion in self._data.completions.values():
+            if not completion.active or completion.race_id != race_id:
+                continue
+            if participant_id is not None and participant_id not in {
+                completion.participant_id,
+                completion.copilot_participant_id,
+            }:
+                continue
+            completion.reverted_at = now
+            if task := self._data.tasks.get(completion.task_id):
+                task.status = TaskStatus.OPEN
+                task.updated_at = now
+            reverted += 1
+        return reverted
+
+    async def async_reset_race(
+        self, race_id: str | None = None
+    ) -> dict[str, Any]:
+        """Reset only one race, reopening its tasks and restoring its roster."""
+        async with self._mutation_lock:
+            race = self._require_race(race_id)
+            now = dt_util.utcnow()
+            reverted = self._revert_race_completions(race["id"], now)
+            race.update(
+                {
+                    "status": RaceStatus.READY.value,
+                    "participant_ids": [
+                        participant.id
+                        for participant in self._data.participants.values()
+                        if participant.active
+                    ],
+                    "finished_at": None,
+                    "reset_at": now.isoformat(),
+                }
+            )
+            await self._async_commit()
+            state = self.race_state(race["id"], now=now)
+            state["reverted_completions"] = reverted
+            return state
+
+    async def async_remove_race_participant(
+        self,
+        participant_id: str,
+        race_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Remove one participant only from a race and rewind affected work."""
+        async with self._mutation_lock:
+            self._require_participant(participant_id)
+            race = self._require_race(race_id)
+            participant_ids = self._race_participant_ids(race)
+            if participant_id not in participant_ids:
+                raise NotFoundError("Participant is not in this race")
+            now = dt_util.utcnow()
+            participant_ids.remove(participant_id)
+            reverted = self._revert_race_completions(
+                race["id"], now, participant_id
+            )
+            await self._async_commit()
+            state = self.race_state(race["id"], now=now)
+            state["reverted_completions"] = reverted
+            return state
 
     def race_state(
         self, race_id: str | None = None, *, now: datetime | None = None
@@ -762,8 +869,14 @@ class ChoreRaceManager:
                 "started_at": None,
                 "ends_at": None,
                 "finished_at": None,
+                "reset_at": None,
                 "remaining_seconds": 0,
                 "leaderboard": [],
+                "participant_ids": [
+                    participant.id
+                    for participant in self._data.participants.values()
+                    if participant.active
+                ],
                 "champion": None,
                 "last_completion": None,
                 "current_task": open_tasks[0] if open_tasks else None,
@@ -785,8 +898,10 @@ class ChoreRaceManager:
             "started_at": race["started_at"],
             "ends_at": race["ends_at"],
             "finished_at": race.get("finished_at"),
+            "reset_at": race.get("reset_at"),
             "remaining_seconds": remaining,
             "leaderboard": leaderboard,
+            "participant_ids": list(self._race_participant_ids(race)),
             "champion": champion,
             "last_completion": self._race_last_completion(race["id"]),
             "current_task": open_tasks[0] if open_tasks else None,
@@ -795,6 +910,8 @@ class ChoreRaceManager:
 
     def _race_leaderboard(self, race_id: str) -> list[dict[str, Any]]:
         """Return exact session totals and an auditable bonus breakdown."""
+        race = self._data.race_sessions[race_id]
+        participant_ids = set(self._race_participant_ids(race))
         rows: dict[str, dict[str, Any]] = {
             participant.id: {
                 "participant_id": participant.id,
@@ -806,13 +923,13 @@ class ChoreRaceManager:
                 "copilot_points": 0,
             }
             for participant in self._data.participants.values()
-            if participant.active
+            if participant.active and participant.id in participant_ids
         }
         for completion in self._data.completions.values():
             if not completion.active or completion.race_id != race_id:
                 continue
             driver = self._data.participants.get(completion.participant_id)
-            if driver is not None:
+            if driver is not None and driver.id in participant_ids:
                 row = rows.setdefault(
                     driver.id,
                     {
@@ -832,7 +949,7 @@ class ChoreRaceManager:
             copilot = self._data.participants.get(
                 completion.copilot_participant_id or ""
             )
-            if copilot is not None:
+            if copilot is not None and copilot.id in participant_ids:
                 row = rows.setdefault(
                     copilot.id,
                     {

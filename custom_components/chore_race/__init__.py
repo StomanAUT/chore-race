@@ -26,6 +26,8 @@ from .const import (
     SERVICE_DELETE_CHORE_TYPE,
     SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_DELETE_TASK,
+    SERVICE_REMOVE_RACE_PARTICIPANT,
+    SERVICE_RESET_RACE,
     SERVICE_START_RACE,
     SERVICE_STOP_RACE,
     SERVICE_UNDO_COMPLETION,
@@ -171,6 +173,13 @@ UPDATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
 DELETE_RECURRENCE_RULE_SCHEMA = vol.Schema({vol.Required("rule_id"): _ID})
 START_RACE_SCHEMA = vol.Schema({})
 STOP_RACE_SCHEMA = vol.Schema({})
+RESET_RACE_SCHEMA = vol.Schema({vol.Optional("race_id"): _ID})
+REMOVE_RACE_PARTICIPANT_SCHEMA = vol.Schema(
+    {
+        vol.Required("participant_id"): _ID,
+        vol.Optional("race_id"): _ID,
+    }
+)
 COMPLETE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("task_id"): _ID,
@@ -195,6 +204,8 @@ ADMIN_SERVICES = {
     SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_START_RACE,
     SERVICE_STOP_RACE,
+    SERVICE_RESET_RACE,
+    SERVICE_REMOVE_RACE_PARTICIPANT,
     SERVICE_UNDO_COMPLETION,
     SERVICE_DELETE_TASK,
 }
@@ -252,6 +263,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 result = await manager.async_start_race()
             elif call.service == SERVICE_STOP_RACE:
                 result = await manager.async_stop_race()
+            elif call.service == SERVICE_RESET_RACE:
+                result = await manager.async_reset_race(**values)
+            elif call.service == SERVICE_REMOVE_RACE_PARTICIPANT:
+                result = await manager.async_remove_race_participant(**values)
             elif call.service == SERVICE_COMPLETE_TASK:
                 result = await manager.async_complete_task(**values)
             elif call.service == SERVICE_UNDO_COMPLETION:
@@ -280,6 +295,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_DELETE_RECURRENCE_RULE: DELETE_RECURRENCE_RULE_SCHEMA,
         SERVICE_START_RACE: START_RACE_SCHEMA,
         SERVICE_STOP_RACE: STOP_RACE_SCHEMA,
+        SERVICE_RESET_RACE: RESET_RACE_SCHEMA,
+        SERVICE_REMOVE_RACE_PARTICIPANT: REMOVE_RACE_PARTICIPANT_SCHEMA,
         SERVICE_COMPLETE_TASK: COMPLETE_TASK_SCHEMA,
         SERVICE_UNDO_COMPLETION: UNDO_COMPLETION_SCHEMA,
         SERVICE_DELETE_TASK: DELETE_TASK_SCHEMA,

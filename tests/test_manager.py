@@ -589,3 +589,124 @@ async def test_finished_race_exposes_unique_champion_and_ties(manager):
     assert finished["race_id"] == race["race_id"]
     assert finished["champion"]["participant_id"] == driver.id
     assert finished["champion"]["points"] == task.race_points
+
+
+async def test_reset_selected_race_reverts_only_its_completions(manager):
+    """A reset reopens its race tasks without touching unrelated points."""
+    participant, chore_type, normal_task = await _base_records(manager)
+    normal_completion = await manager.async_complete_task(
+        normal_task.id, participant.id
+    )
+    first_race_task = await manager.async_create_task(
+        chore_type.id, manager.today()
+    )
+    first_race = await manager.async_start_race()
+    first_race_completion = await manager.async_complete_task(
+        first_race_task.id,
+        participant.id,
+        require_active_race=True,
+    )
+    await manager.async_stop_race()
+
+    second_race_task = await manager.async_create_task(
+        chore_type.id, manager.today()
+    )
+    second_race = await manager.async_start_race()
+    second_race_completion = await manager.async_complete_task(
+        second_race_task.id,
+        participant.id,
+        require_active_race=True,
+    )
+
+    reset = await manager.async_reset_race(first_race["race_id"])
+
+    assert reset["race_id"] == first_race["race_id"]
+    assert reset["status"] == "ready"
+    assert reset["reset_at"] is not None
+    assert reset["participant_ids"] == [participant.id]
+    assert first_race_completion.active is False
+    assert first_race_task.status is TaskStatus.OPEN
+    assert normal_completion.active is True
+    assert normal_task.status is TaskStatus.COMPLETED
+    assert second_race_completion.active is True
+    assert second_race_task.status is TaskStatus.COMPLETED
+    assert manager.normal_points_week()[participant.id] == 1
+    assert manager.race_points_week(first_race["race_id"])[participant.id] == 0
+    assert (
+        manager.race_points_week(second_race["race_id"])[participant.id]
+        == second_race_task.race_points
+    )
+    assert manager.race_state(second_race["race_id"])["status"] == "running"
+
+
+async def test_reset_current_race_restores_current_active_roster(manager):
+    """Reset without an ID targets the current race and refreshes its roster."""
+    participant, _, task = await _base_records(manager)
+    removed_before_reset = await manager.async_create_participant("Viktoria")
+    race = await manager.async_start_race()
+    completion = await manager.async_complete_task(
+        task.id, participant.id, require_active_race=True
+    )
+    await manager.async_update_participant(
+        removed_before_reset.id, active=False
+    )
+    added_after_start = await manager.async_create_participant("Manuel")
+
+    reset = await manager.async_reset_race()
+
+    assert reset["race_id"] == race["race_id"]
+    assert reset["status"] == "ready"
+    assert set(reset["participant_ids"]) == {
+        participant.id,
+        added_after_start.id,
+    }
+    assert completion.active is False
+    assert task.status is TaskStatus.OPEN
+
+
+async def test_remove_race_participant_is_local_and_reverts_their_roles(manager):
+    """Removing a racer preserves the person and unrelated race completions."""
+    driver, chore_type, driver_task = await _base_records(manager)
+    removed = await manager.async_create_participant("Viktoria")
+    unaffected = await manager.async_create_participant("Manuel")
+    copilot_task = await manager.async_create_task(
+        chore_type.id, manager.today()
+    )
+    unaffected_task = await manager.async_create_task(
+        chore_type.id, manager.today()
+    )
+    race = await manager.async_start_race()
+    removed_as_driver = await manager.async_complete_task(
+        driver_task.id,
+        removed.id,
+        require_active_race=True,
+    )
+    removed_as_copilot = await manager.async_complete_task(
+        copilot_task.id,
+        driver.id,
+        require_active_race=True,
+        copilot_participant_id=removed.id,
+    )
+    unrelated_completion = await manager.async_complete_task(
+        unaffected_task.id,
+        unaffected.id,
+        require_active_race=True,
+    )
+
+    state = await manager.async_remove_race_participant(
+        removed.id, race["race_id"]
+    )
+
+    assert removed.id not in state["participant_ids"]
+    assert removed.id not in {
+        row["participant_id"] for row in state["leaderboard"]
+    }
+    assert manager.data.participants[removed.id].active is True
+    assert removed_as_driver.active is False
+    assert removed_as_copilot.active is False
+    assert driver_task.status is TaskStatus.OPEN
+    assert copilot_task.status is TaskStatus.OPEN
+    assert unrelated_completion.active is True
+    assert unaffected_task.status is TaskStatus.COMPLETED
+    assert state["leaderboard"][0]["participant_id"] == unaffected.id
+    assert state["leaderboard"][0]["points"] == unaffected_task.race_points

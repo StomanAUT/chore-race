@@ -126,6 +126,28 @@ stop_race:
   name: Stop race
   description: Finish the currently running race.
 
+reset_race:
+  name: Reset race
+  description: Revert this race's scores, reopen its tasks and restore the active roster.
+  fields:
+    race_id:
+      description: Optional race ID; defaults to the latest race.
+      selector:
+        text:
+
+remove_race_participant:
+  name: Remove race participant
+  description: Remove a participant only from one race and revert affected race completions.
+  fields:
+    participant_id:
+      required: true
+      selector:
+        text:
+    race_id:
+      description: Optional race ID; defaults to the latest race.
+      selector:
+        text:
+
 update_participant:
   name: Update participant
   description: Update participant fields without changing the stable ID.

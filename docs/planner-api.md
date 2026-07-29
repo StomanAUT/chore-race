@@ -51,6 +51,34 @@ Race lifecycle mutations are admin-only:
 {"type": "chore_race/stop_race"}
 ```
 
+Reset the current race, or pass `race_id` to reset a selected session:
+
+```json
+{
+  "type": "chore_race/reset_race",
+  "race_id": "optional-race-id"
+}
+```
+
+The session remains auditable with status `ready` and a `reset_at` timestamp.
+Only active completions belonging to that race are reverted and their tasks
+reopened. Normal points and points from other races are preserved.
+
+Remove a participant from the current race, or from a selected session:
+
+```json
+{
+  "type": "chore_race/remove_race_participant",
+  "participant_id": "stable-participant-id",
+  "race_id": "optional-race-id"
+}
+```
+
+This changes only the session's `participant_ids`; the global participant
+record remains active. Active completions in that race involving the removed
+participant as driver or copilot are reverted and their tasks reopened.
+Unrelated completions remain active.
+
 ### Create a participant
 
 ```json
@@ -147,6 +175,21 @@ Administrators start and stop a session with:
 
 ```json
 {"type": "chore_race/stop_race"}
+```
+
+They can also reset the current or selected session and remove a participant
+from its local roster:
+
+```json
+{"type": "chore_race/reset_race", "race_id": "optional-race-id"}
+```
+
+```json
+{
+  "type": "chore_race/remove_race_participant",
+  "participant_id": "participant-id",
+  "race_id": "optional-race-id"
+}
 ```
 
 During a running race an authenticated client completes a task with optional
