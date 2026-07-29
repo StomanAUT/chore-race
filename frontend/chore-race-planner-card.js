@@ -174,20 +174,11 @@
     }
 
     async _submit(service, payload, successMessage) {
-      this._saving = true;
-      this._notice = "";
-      this._error = "";
-      this._render();
-      try {
-        await this._hass.callService("chore_race", service, payload);
-        this._notice = successMessage;
-        await this._load();
-      } catch (error) {
-        this._error = messageFor(error);
-      } finally {
-        this._saving = false;
-        this._render();
-      }
+      return this._submitWS(
+        `chore_race/${service}`,
+        payload,
+        successMessage,
+      );
     }
 
     async _submitWS(type, payload, successMessage) {
