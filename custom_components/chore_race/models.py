@@ -33,6 +33,14 @@ class ScoringMode(StrEnum):
     RACE = "race"
 
 
+class RaceStatus(StrEnum):
+    """Lifecycle state of a race session."""
+
+    READY = "ready"
+    RUNNING = "running"
+    FINISHED = "finished"
+
+
 class Difficulty(StrEnum):
     """Optional presentation difficulty."""
 

@@ -214,3 +214,39 @@ async def test_week_points_keep_normal_and_race_scores_separate(manager):
     assert manager.race_points_week()[participant.id] == 1
     assert manager.race_points_week("race-1")[participant.id] == 1
     assert manager.week_leader() == participant
+
+
+async def test_race_transitions_and_countdown(manager):
+    await manager.async_load()
+
+    ready = manager.race_state()
+    assert ready["status"] == "ready"
+    assert ready["remaining_seconds"] == 0
+
+    running = await manager.async_start_race()
+    assert running["status"] == "running"
+    assert running["race_id"]
+    assert 1798 <= running["remaining_seconds"] <= 1800
+
+    with pytest.raises(ConflictError):
+        await manager.async_start_race()
+
+    finished = await manager.async_stop_race()
+    assert finished["status"] == "finished"
+    assert finished["race_id"] == running["race_id"]
+    assert finished["remaining_seconds"] == 0
+
+
+async def test_completion_during_race_persists_race_score(manager):
+    participant, _, task = await _base_records(manager)
+    race = await manager.async_start_race()
+
+    completion = await manager.async_complete_task(task.id, participant.id)
+
+    assert completion.scoring_mode is ScoringMode.RACE
+    assert completion.race_id == race["race_id"]
+    assert completion.total_points_awarded == task.race_points
+    assert manager.race_points_week(race["race_id"])[participant.id] == 5
+    assert manager.normal_points_week()[participant.id] == 0
+    assert manager.week_leader() == participant
+    assert manager.race_state()["leaderboard"][0]["points"] == 5

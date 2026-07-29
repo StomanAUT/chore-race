@@ -120,6 +120,21 @@ def websocket_get_leaderboard(
     )
 
 
+@websocket_api.websocket_command({vol.Required("type"): "chore_race/get_race_state"})
+@callback
+def websocket_get_race_state(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return current or most recent race state."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    connection.send_result(msg["id"], manager.race_state())
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """Register all authenticated commands once."""
     for command in (
@@ -128,5 +143,6 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         websocket_get_participants,
         websocket_get_chore_types,
         websocket_get_leaderboard,
+        websocket_get_race_state,
     ):
         websocket_api.async_register_command(hass, command)

@@ -381,6 +381,50 @@ async def websocket_delete_recurrence_rule(
     connection.send_result(msg["id"], {})
 
 
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {vol.Required("type"): "chore_race/start_race"}
+)
+async def websocket_start_race(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Start a race."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        state = await manager.async_start_race()
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], state)
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {vol.Required("type"): "chore_race/stop_race"}
+)
+async def websocket_stop_race(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Stop the running race."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        state = await manager.async_stop_race()
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], state)
+
+
 def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
     """Register read and admin-only planner commands."""
     for command in (
@@ -394,5 +438,7 @@ def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
         websocket_update_settings,
         websocket_update_recurrence_rule,
         websocket_delete_recurrence_rule,
+        websocket_start_race,
+        websocket_stop_race,
     ):
         websocket_api.async_register_command(hass, command)

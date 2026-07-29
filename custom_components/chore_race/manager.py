@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import calendar
 from collections.abc import Callable
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -27,6 +27,7 @@ from .models import (
     Completion,
     Difficulty,
     Participant,
+    RaceStatus,
     ScoringMode,
     Settings,
     TaskSource,
@@ -477,7 +478,7 @@ class ChoreRaceManager:
     async def async_complete_task(
         self, task_id: str, participant_id: str
     ) -> Completion:
-        """Atomically complete a task once and award normal points."""
+        """Atomically complete a task once and award normal or race points."""
         async with self._mutation_lock:
             task = self._require_task(task_id)
             participant = self._require_participant(participant_id)
@@ -497,7 +498,11 @@ class ChoreRaceManager:
             if self._active_completion_for_task(task_id) is not None:
                 raise ConflictError("Task already has an active completion")
             now = dt_util.utcnow()
-            score = calculate_completion_score(task, self._data.settings)
+            race = self._active_race(now)
+            race_id = race["id"] if race is not None else None
+            score = calculate_completion_score(
+                task, self._data.settings, race_id=race_id
+            )
             completion = Completion(
                 id=self._new_id(),
                 task_id=task.id,
@@ -509,6 +514,7 @@ class ChoreRaceManager:
                 copilot_points_awarded=score.copilot,
                 total_points_awarded=score.total,
                 scoring_mode=score.mode,
+                race_id=race_id,
             )
             task.status = TaskStatus.COMPLETED
             task.updated_at = now
@@ -523,6 +529,107 @@ class ChoreRaceManager:
                 },
             )
             return completion
+
+    def _active_race(self, now: datetime | None = None) -> dict[str, Any] | None:
+        """Return the running, non-expired race session."""
+        current = now or dt_util.utcnow()
+        for race in self._data.race_sessions.values():
+            if race.get("status") != RaceStatus.RUNNING:
+                continue
+            if datetime.fromisoformat(race["ends_at"]) > current:
+                return race
+        return None
+
+    async def async_start_race(self) -> dict[str, Any]:
+        """Start one race, closing an expired session if necessary."""
+        async with self._mutation_lock:
+            if not self._data.settings.race_enabled:
+                raise ValidationError("Races are disabled")
+            now = dt_util.utcnow()
+            for race in self._data.race_sessions.values():
+                if race.get("status") != RaceStatus.RUNNING:
+                    continue
+                if datetime.fromisoformat(race["ends_at"]) > now:
+                    raise ConflictError("A race is already running")
+                race["status"] = RaceStatus.FINISHED.value
+                race["finished_at"] = race["ends_at"]
+            race_id = self._new_id()
+            race = {
+                "id": race_id,
+                "status": RaceStatus.RUNNING.value,
+                "started_at": now.isoformat(),
+                "ends_at": (
+                    now
+                    + timedelta(
+                        seconds=self._data.settings.race_duration_seconds
+                    )
+                ).isoformat(),
+                "finished_at": None,
+            }
+            self._data.race_sessions[race_id] = race
+            await self._async_commit()
+            return self.race_state(race_id)
+
+    async def async_stop_race(self) -> dict[str, Any]:
+        """Finish the currently running race."""
+        async with self._mutation_lock:
+            now = dt_util.utcnow()
+            race = self._active_race(now)
+            if race is None:
+                raise ConflictError("No race is running")
+            race["status"] = RaceStatus.FINISHED.value
+            race["finished_at"] = now.isoformat()
+            await self._async_commit()
+            return self.race_state(race["id"], now=now)
+
+    def race_state(
+        self, race_id: str | None = None, *, now: datetime | None = None
+    ) -> dict[str, Any]:
+        """Return countdown and leaderboard for one or the latest race."""
+        current = now or dt_util.utcnow()
+        race = self._data.race_sessions.get(race_id) if race_id else None
+        if race is None and self._data.race_sessions:
+            race = max(
+                self._data.race_sessions.values(),
+                key=lambda item: item["started_at"],
+            )
+        if race is None:
+            return {
+                "status": RaceStatus.READY.value,
+                "race_id": None,
+                "started_at": None,
+                "ends_at": None,
+                "remaining_seconds": 0,
+                "leaderboard": [],
+            }
+        ends_at = datetime.fromisoformat(race["ends_at"])
+        remaining = max(0, int((ends_at - current).total_seconds()))
+        status = race["status"]
+        if status == RaceStatus.RUNNING and remaining == 0:
+            status = RaceStatus.FINISHED.value
+        if status != RaceStatus.RUNNING:
+            remaining = 0
+        totals = self.race_points_week(race["id"])
+        leaderboard = sorted(
+            (
+                {
+                    "participant_id": participant.id,
+                    "name": participant.name,
+                    "points": totals.get(participant.id, 0),
+                }
+                for participant in self._data.participants.values()
+                if participant.active
+            ),
+            key=lambda item: (-item["points"], item["name"].casefold()),
+        )
+        return {
+            "status": status,
+            "race_id": race["id"],
+            "started_at": race["started_at"],
+            "ends_at": race["ends_at"],
+            "remaining_seconds": remaining,
+            "leaderboard": leaderboard,
+        }
 
     async def async_undo_completion(self, completion_id: str) -> Completion:
         """Revert a completion while preserving its audit history."""

@@ -29,8 +29,8 @@ def calculate_completion_score(
 ) -> Score:
     """Calculate a completion score in exactly one central place.
 
-    Milestone 1 has no active race engine, but the explicit race branch keeps
-    future score changes away from service, API, entity and UI layers.
+    The manager passes a race ID only while a race session is active, keeping
+    scoring policy away from service, API, entity and UI layers.
     """
     if race_id is None:
         return Score(

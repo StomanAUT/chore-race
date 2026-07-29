@@ -98,6 +98,7 @@
       this._connected = false;
       this._requestGeneration = 0;
       this._refreshTimer = undefined;
+      this._countdownTimer = undefined;
       this._motionQuery = undefined;
       this._onMotionChange = () => this._render();
       this._onVisibilityChange = () => {
@@ -159,6 +160,8 @@
       this._requestGeneration += 1;
       clearInterval(this._refreshTimer);
       this._refreshTimer = undefined;
+      clearInterval(this._countdownTimer);
+      this._countdownTimer = undefined;
       this._motionQuery?.removeEventListener?.("change", this._onMotionChange);
       document.removeEventListener("visibilitychange", this._onVisibilityChange);
     }
@@ -177,16 +180,71 @@
       if (!this._connected || !this._hass?.callWS) return;
       const generation = ++this._requestGeneration;
       try {
-        const [state, participants, leaderboard] = await Promise.all([
-          this._hass.callWS({ type: "chore_race/get_state" }),
+        let raceState;
+        try {
+          raceState = await this._hass.callWS({
+            type: "chore_race/get_race_state",
+          });
+        } catch (_error) {
+          raceState = undefined;
+        }
+        if (raceState) {
+          this._raceReceivedAt = Date.now();
+          const [participants, state] = await Promise.all([
+            this._hass.callWS({ type: "chore_race/get_participants" }),
+            this._hass.callWS({ type: "chore_race/get_state" }),
+          ]);
+          if (!this._connected || generation !== this._requestGeneration) return;
+          const participantById = Object.fromEntries(
+            participants.map((participant) => [participant.id, participant]),
+          );
+          this._data = {
+            raceState,
+            state,
+            leaderboard: (raceState.leaderboard ?? []).map((entry) => ({
+              ...entry,
+              points: Number(entry.points ?? entry.race_points ?? entry.score ?? 0),
+              name:
+                entry.name ??
+                participantById[entry.participant_id]?.name ??
+                "Teilnehmer",
+              avatar:
+                entry.avatar ?? participantById[entry.participant_id]?.avatar,
+            })),
+          };
+          this._error = undefined;
+          this._syncCountdownTimer();
+          this._render();
+          return;
+        }
+        const [participants, leaderboard, tasks] = await Promise.all([
           this._hass.callWS({ type: "chore_race/get_participants" }),
           this._hass.callWS({ type: "chore_race/get_leaderboard" }),
+          this._hass.callWS({ type: "chore_race/get_tasks" }),
         ]);
+        let state;
+        try {
+          state = await this._hass.callWS({ type: "chore_race/get_state" });
+        } catch (_error) {
+          const localDate = new Date();
+          localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+          const day = localDate.toISOString().slice(0, 10);
+          const todayTasks = tasks.filter((task) => task.date === day);
+          const completed = todayTasks.filter(
+            (task) => task.status === "completed",
+          ).length;
+          state = {
+            open_tasks_today: todayTasks.length - completed,
+            completed_tasks_today: completed,
+            team_progress: { completed, total: todayTasks.length },
+          };
+        }
         if (!this._connected || generation !== this._requestGeneration) return;
         const participantById = Object.fromEntries(
           participants.map((participant) => [participant.id, participant]),
         );
         this._data = {
+          raceState: { status: "legacy" },
           state,
           leaderboard: leaderboard.map((entry) => ({
             ...entry,
@@ -194,6 +252,7 @@
           })),
         };
         this._error = undefined;
+        this._syncCountdownTimer();
       } catch (error) {
         if (!this._connected || generation !== this._requestGeneration) return;
         this._error = errorMessage(error);
@@ -201,10 +260,75 @@
       this._render();
     }
 
+    _remainingSeconds() {
+      const race = this._data?.raceState;
+      if (!race) return 0;
+      if (race.ends_at) {
+        return Math.max(0, Math.ceil((Date.parse(race.ends_at) - Date.now()) / 1000));
+      }
+      const elapsed = Math.floor((Date.now() - (this._raceReceivedAt ?? Date.now())) / 1000);
+      return Math.max(0, (Number(race.remaining_seconds) || 0) - elapsed);
+    }
+
+    _syncCountdownTimer() {
+      clearInterval(this._countdownTimer);
+      this._countdownTimer = undefined;
+      if (this._data?.raceState?.status !== "running") return;
+      this._countdownTimer = setInterval(() => {
+        if (document.hidden || !this._connected) return;
+        if (this._remainingSeconds() <= 0) {
+          clearInterval(this._countdownTimer);
+          this._countdownTimer = undefined;
+          this._load();
+          return;
+        }
+        this._render();
+      }, 1000);
+    }
+
+    _formatDuration(seconds) {
+      const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+      const hours = Math.floor(safe / 3600);
+      const minutes = Math.floor((safe % 3600) / 60);
+      const remainder = safe % 60;
+      return hours
+        ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+        : `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
+    }
+
     _render() {
       if (!this.shadowRoot) return;
       const state = this._data?.state ?? DEMO_DATA.state;
       const racers = this._data?.leaderboard ?? [];
+      const race = this._data?.raceState ?? { status: "demo" };
+      const status = ["ready", "running", "finished", "legacy"].includes(race.status)
+        ? race.status
+        : "ready";
+      const statusCopy = {
+        ready: {
+          eyebrow: "RENNEN BEREIT",
+          heading: "Startet in",
+          detail: "Macht euch bereit",
+        },
+        running: {
+          eyebrow: "RENNEN LÄUFT",
+          heading: "Noch",
+          detail: "Jede Aufgabe zählt",
+        },
+        finished: {
+          eyebrow: "RENNEN BEENDET",
+          heading: "Zieleinlauf",
+          detail: racers[0]?.name
+            ? `${racers[0].name} liegt vorne`
+            : "Ergebnis steht fest",
+        },
+        legacy: {
+          eyebrow: "TEAMWERTUNG",
+          heading: "Wochenstand",
+          detail: "Kompatibilitätsmodus",
+        },
+      }[status];
+      const remaining = this._remainingSeconds();
       const completed = Number(state.team_progress?.completed ?? 0);
       const total = Number(state.team_progress?.total ?? 0);
       const teamProgress = total > 0 ? clamp((completed / total) * 100, 0, 100) : 0;
@@ -255,24 +379,40 @@
         <ha-card class="${reducedMotion ? "reduced-motion" : ""}">
           <header>
             <div>
-              <span class="eyebrow">HEUTE &middot; TEAMMODUS</span>
+              <span class="eyebrow">${statusCopy.eyebrow}</span>
               <h2>${title}</h2>
             </div>
             <div class="flag" aria-hidden="true"><i></i></div>
           </header>
-          <section class="team" aria-label="Teamfortschritt">
+          <section class="team race-summary" aria-label="Rennstatus">
             <div class="team-copy">
-              <span>Gemeinsam geschafft</span>
-              <strong>${completed}<small> / ${total} Aufgaben</small></strong>
+              <span>${statusCopy.heading}</span>
+              <strong>${
+                status === "ready" || status === "running"
+                  ? this._formatDuration(remaining)
+                  : status === "finished"
+                    ? "Fertig"
+                    : `${completed} / ${total}`
+              }</strong>
             </div>
-            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
-              aria-valuenow="${Math.round(teamProgress)}">
-              <i style="--team-progress: ${teamProgress}%"></i>
-            </div>
+            <small class="status-detail">${escapeHtml(statusCopy.detail)}</small>
+            ${
+              status === "legacy"
+                ? `<div class="meter" role="progressbar" aria-valuemin="0"
+                    aria-valuemax="100" aria-valuenow="${Math.round(teamProgress)}">
+                    <i style="--team-progress: ${teamProgress}%"></i></div>`
+                : ""
+            }
           </section>
           <section class="lanes">${lanes}</section>
           <footer>
-            <span>${state.open_tasks_today ?? 0} Aufgaben offen</span>
+            <span>${
+              status === "legacy"
+                ? `${state.open_tasks_today ?? 0} Aufgaben offen`
+                : race.race_id
+                  ? `Rennen ${escapeHtml(race.race_id)}`
+                  : "Chore Race"
+            }</span>
             <span class="live"><i></i>${this._hass ? "Live" : "Demo"}</span>
           </footer>
           ${
@@ -306,7 +446,8 @@
         ha-card {
           display: block; overflow: hidden; color: var(--ink);
           background:
-            radial-gradient(circle at 92% 0%, rgba(105, 92, 255, .2), transparent 28%),
+            radial-gradient(circle at 92% 0%,
+              color-mix(in srgb, var(--accent) 14%, transparent), transparent 28%),
             linear-gradient(
               145deg,
               var(--surface),
@@ -333,6 +474,9 @@
         .team-copy { justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }
         .team-copy strong { color: var(--ink); font-size: 19px; }
         .team-copy small { color: var(--muted); font-size: 12px; font-weight: 600; }
+        .status-detail { display:block; margin-top:5px; color:var(--muted);
+          font-size:12px; }
+        .race-summary .team-copy strong { font-variant-numeric: tabular-nums; }
         .meter { height: 9px; margin-top: 12px; border-radius: 99px;
           overflow: hidden; background: color-mix(in srgb, var(--accent) 14%, transparent); }
         .meter i { display: block; width: var(--team-progress); height: 100%; border-radius: inherit;
@@ -354,8 +498,8 @@
         .car { position: relative; width: 50px; height: 25px; border-radius: 9px 13px 7px 7px;
           background: linear-gradient(
             145deg,
-            hsl(calc(250 + var(--lane) * 48) 80% 64%),
-            hsl(calc(250 + var(--lane) * 48) 72% 48%)
+            hsl(calc(215 + var(--lane) * 42) 52% 62%),
+            hsl(calc(215 + var(--lane) * 42) 48% 46%)
           );
           filter: drop-shadow(0 4px 3px rgba(0,0,0,.3)); }
         .car::before { content: ""; position: absolute; left: 12px; top: -7px; width: 25px; height: 11px;
@@ -372,7 +516,9 @@
           box-shadow: 0 0 0 4px rgba(36,207,158,.13); animation: pulse 1.8s ease-in-out infinite; }
         .error { margin: 10px 0 0; color: var(--error-color, #db4437); font-size: 11px; }
         .empty { padding: 22px; color: var(--muted); text-align: center;
-          background: var(--surface-raised); border: 1px dashed #8177df; border-radius: 14px; }
+          background: var(--surface-raised);
+          border: 1px dashed color-mix(in srgb,var(--accent) 52%,var(--line));
+          border-radius: 14px; }
         @keyframes pulse { 50% { transform: scale(.6); opacity: .55; } }
         .reduced-motion *, .reduced-motion *::before, .reduced-motion *::after {
           animation-duration: .001ms !important; animation-iteration-count: 1 !important;

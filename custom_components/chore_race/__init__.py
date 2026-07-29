@@ -23,6 +23,8 @@ from .const import (
     SERVICE_CREATE_TASK,
     SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_DELETE_TASK,
+    SERVICE_START_RACE,
+    SERVICE_STOP_RACE,
     SERVICE_UNDO_COMPLETION,
     SERVICE_UPDATE_CHORE_TYPE,
     SERVICE_UPDATE_PARTICIPANT,
@@ -143,6 +145,8 @@ UPDATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
     }
 )
 DELETE_RECURRENCE_RULE_SCHEMA = vol.Schema({vol.Required("rule_id"): _ID})
+START_RACE_SCHEMA = vol.Schema({})
+STOP_RACE_SCHEMA = vol.Schema({})
 COMPLETE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("task_id"): _ID,
@@ -161,6 +165,8 @@ ADMIN_SERVICES = {
     SERVICE_CREATE_RECURRENCE_RULE,
     SERVICE_UPDATE_RECURRENCE_RULE,
     SERVICE_DELETE_RECURRENCE_RULE,
+    SERVICE_START_RACE,
+    SERVICE_STOP_RACE,
     SERVICE_UNDO_COMPLETION,
     SERVICE_DELETE_TASK,
 }
@@ -205,6 +211,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             elif call.service == SERVICE_DELETE_RECURRENCE_RULE:
                 await manager.async_delete_recurrence_rule(**values)
                 return {} if call.return_response else None
+            elif call.service == SERVICE_START_RACE:
+                result = await manager.async_start_race()
+            elif call.service == SERVICE_STOP_RACE:
+                result = await manager.async_stop_race()
             elif call.service == SERVICE_COMPLETE_TASK:
                 result = await manager.async_complete_task(**values)
             elif call.service == SERVICE_UNDO_COMPLETION:
@@ -229,6 +239,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_CREATE_RECURRENCE_RULE: CREATE_RECURRENCE_RULE_SCHEMA,
         SERVICE_UPDATE_RECURRENCE_RULE: UPDATE_RECURRENCE_RULE_SCHEMA,
         SERVICE_DELETE_RECURRENCE_RULE: DELETE_RECURRENCE_RULE_SCHEMA,
+        SERVICE_START_RACE: START_RACE_SCHEMA,
+        SERVICE_STOP_RACE: STOP_RACE_SCHEMA,
         SERVICE_COMPLETE_TASK: COMPLETE_TASK_SCHEMA,
         SERVICE_UNDO_COMPLETION: UNDO_COMPLETION_SCHEMA,
         SERVICE_DELETE_TASK: DELETE_TASK_SCHEMA,

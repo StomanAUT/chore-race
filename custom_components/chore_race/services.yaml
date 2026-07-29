@@ -110,6 +110,14 @@ delete_recurrence_rule:
       selector:
         text:
 
+start_race:
+  name: Start race
+  description: Start a race using the configured duration.
+
+stop_race:
+  name: Stop race
+  description: Finish the currently running race.
+
 update_participant:
   name: Update participant
   description: Update participant fields without changing the stable ID.
