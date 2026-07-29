@@ -122,6 +122,9 @@
               name: values.get("name").trim(),
               person_entity_id: personEntityId,
               avatar: person?.attributes?.entity_picture || null,
+              role: values.get("role"),
+              can_do_restricted_tasks:
+                values.get("can_do_restricted_tasks") === "on",
             },
             "Teilnehmer wurde angelegt.",
           );
@@ -333,6 +336,14 @@
               </select></label>
               <label>Name<input required maxlength="100" name="name"
                 placeholder="z. B. Lina"></label>
+              <div class="row">
+                <label>Rolle<select name="role">
+                  <option value="child">Kind</option>
+                  <option value="adult">Erwachsen</option>
+                </select></label>
+                <label class="check"><input type="checkbox"
+                  name="can_do_restricted_tasks"> Eingeschränkte Aufgaben erlaubt</label>
+              </div>
               <button ${disabled}>Teilnehmer anlegen</button>
             </form>
             <form data-form="chore">
@@ -445,6 +456,8 @@
         form button { width:100%; margin-top:6px; }
         button:disabled { cursor:not-allowed; opacity:.45; }
         .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        .check { display:flex; flex-direction:row; align-items:center; }
+        .check input { width:20px; min-height:20px; }
         .icon-field { display:grid; grid-template-columns:46px 1fr; gap:8px; }
         .icon-preview { display:grid; place-items:center; color:var(--ink);
           background:var(--surface); border:1px solid var(--line); border-radius:10px; }

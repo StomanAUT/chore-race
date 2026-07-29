@@ -95,6 +95,8 @@ def websocket_get_settings(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order", default=0): int,
+        vol.Optional("role", default="child"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks", default=False): bool,
     }
 )
 async def websocket_create_participant(
@@ -112,6 +114,8 @@ async def websocket_create_participant(
             person_entity_id=msg.get("person_entity_id"),
             avatar=msg.get("avatar"),
             sort_order=msg["sort_order"],
+            role=msg["role"],
+            can_do_restricted_tasks=msg["can_do_restricted_tasks"],
         )
     except ChoreRaceError as err:
         _send_domain_error(connection, msg, err)
@@ -130,6 +134,8 @@ async def websocket_create_participant(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order"): int,
+        vol.Optional("role"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks"): bool,
     }
 )
 async def websocket_update_participant(
@@ -149,6 +155,8 @@ async def websocket_update_participant(
             "person_entity_id",
             "avatar",
             "sort_order",
+            "role",
+            "can_do_restricted_tasks",
         )
         if key in msg
     }

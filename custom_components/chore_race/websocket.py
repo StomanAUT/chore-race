@@ -103,7 +103,7 @@ def websocket_get_leaderboard(
     if manager is None:
         connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
         return
-    totals = manager.points_week()
+    totals = manager.race_points_week()
     connection.send_result(
         msg["id"],
         sorted(

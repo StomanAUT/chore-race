@@ -152,3 +152,34 @@ async def test_monthly_rule_uses_last_day_for_short_month(manager):
 
     assert manager._rule_is_due(rule, date(2027, 2, 28))
     assert not manager._rule_is_due(rule, date(2027, 2, 27))
+
+
+async def test_child_cannot_complete_adult_only_task_without_permission(manager):
+    await manager.async_load()
+    child = await manager.async_create_participant("Kind")
+    restricted = await manager.async_create_chore_type(
+        "Backofen reinigen", 5, adult_only=True
+    )
+    task = await manager.async_create_task(restricted.id, manager.today())
+    with pytest.raises(ValidationError):
+        await manager.async_complete_task(task.id, child.id)
+
+    await manager.async_update_participant(
+        child.id, can_do_restricted_tasks=True
+    )
+    await manager.async_complete_task(task.id, child.id)
+
+
+async def test_week_points_keep_normal_and_race_scores_separate(manager):
+    participant, _, task = await _base_records(manager)
+    normal = await manager.async_complete_task(task.id, participant.id)
+    second = await manager.async_create_task(task.chore_type_id, manager.today())
+    race = await manager.async_complete_task(second.id, participant.id)
+    race.scoring_mode = ScoringMode.RACE
+    race.race_id = "race-1"
+
+    assert manager.points_week_all()[participant.id] == 2
+    assert manager.normal_points_week()[participant.id] == 1
+    assert manager.race_points_week()[participant.id] == 1
+    assert manager.race_points_week("race-1")[participant.id] == 1
+    assert manager.week_leader() == participant

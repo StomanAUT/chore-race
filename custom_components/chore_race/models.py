@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, Literal, Self
 
 
 class TaskStatus(StrEnum):
@@ -51,6 +51,8 @@ class Participant:
     person_entity_id: str | None = None
     avatar: str | None = None
     sort_order: int = 0
+    role: Literal["child", "adult"] = "child"
+    can_do_restricted_tasks: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         """Return JSON-compatible data."""

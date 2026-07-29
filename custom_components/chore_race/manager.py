@@ -96,14 +96,20 @@ class ChoreRaceManager:
         person_entity_id: str | None = None,
         avatar: str | None = None,
         sort_order: int = 0,
+        role: str = "child",
+        can_do_restricted_tasks: bool = False,
     ) -> Participant:
         """Create an independently identified participant."""
+        if role not in {"child", "adult"}:
+            raise ValidationError("role must be child or adult")
         participant = Participant(
             id=self._new_id(),
             name=self._validate_name(name),
             person_entity_id=person_entity_id,
             avatar=avatar,
             sort_order=sort_order,
+            role=role,
+            can_do_restricted_tasks=can_do_restricted_tasks,
         )
         async with self._mutation_lock:
             self._data.participants[participant.id] = participant
@@ -114,7 +120,15 @@ class ChoreRaceManager:
         self, participant_id: str, **changes: Any
     ) -> Participant:
         """Update a participant without changing its ID."""
-        allowed = {"name", "active", "person_entity_id", "avatar", "sort_order"}
+        allowed = {
+            "name",
+            "active",
+            "person_entity_id",
+            "avatar",
+            "sort_order",
+            "role",
+            "can_do_restricted_tasks",
+        }
         if unknown := set(changes) - allowed:
             raise ValidationError(f"Unknown participant fields: {sorted(unknown)}")
         async with self._mutation_lock:
@@ -123,6 +137,8 @@ class ChoreRaceManager:
                 raise NotFoundError("Participant not found")
             if "name" in changes:
                 changes["name"] = self._validate_name(changes["name"])
+            if "role" in changes and changes["role"] not in {"child", "adult"}:
+                raise ValidationError("role must be child or adult")
             for key, value in changes.items():
                 setattr(participant, key, value)
             await self._async_commit()
@@ -407,8 +423,15 @@ class ChoreRaceManager:
         async with self._mutation_lock:
             task = self._require_task(task_id)
             participant = self._require_participant(participant_id)
+            chore_type = self._data.chore_types[task.chore_type_id]
             if not participant.active:
                 raise ValidationError("Participant is inactive")
+            if (
+                chore_type.adult_only
+                and participant.role != "adult"
+                and not participant.can_do_restricted_tasks
+            ):
+                raise ValidationError("Participant may not complete adult-only tasks")
             if task.blocked:
                 raise ConflictError("Task is blocked")
             if task.status is not TaskStatus.OPEN:
@@ -522,13 +545,23 @@ class ChoreRaceManager:
         )
 
     def points_by_participant(
-        self, start: date, end: date
+        self,
+        start: date,
+        end: date,
+        *,
+        scoring_mode: ScoringMode | None = None,
+        race_id: str | None = None,
     ) -> dict[str, int]:
         """Aggregate historical awarded points in [start, end)."""
         totals = {participant_id: 0 for participant_id in self._data.participants}
         for completion in self._data.completions.values():
             local_day = dt_util.as_local(completion.completed_at).date()
-            if completion.active and start <= local_day < end:
+            if (
+                completion.active
+                and start <= local_day < end
+                and (scoring_mode is None or completion.scoring_mode is scoring_mode)
+                and (race_id is None or completion.race_id == race_id)
+            ):
                 totals[completion.participant_id] = (
                     totals.get(completion.participant_id, 0)
                     + completion.total_points_awarded
@@ -546,13 +579,29 @@ class ChoreRaceManager:
         return self.points_by_participant(today, today + timedelta(days=1))
 
     def points_week(self) -> dict[str, int]:
-        """Return current ISO-week participant totals."""
+        """Return all current ISO-week participant totals."""
         start, end = self._week_bounds()
         return self.points_by_participant(start, end)
 
+    def points_week_all(self) -> dict[str, int]:
+        """Return all active completion points in the current week."""
+        return self.points_week()
+
+    def race_points_week(self, race_id: str | None = None) -> dict[str, int]:
+        """Return only race-scored points in the current week."""
+        start, end = self._week_bounds()
+        return self.points_by_participant(
+            start, end, scoring_mode=ScoringMode.RACE, race_id=race_id
+        )
+
+    def normal_points_week(self) -> dict[str, int]:
+        """Return non-race points in the current week."""
+        start, end = self._week_bounds()
+        return self.points_by_participant(start, end, scoring_mode=ScoringMode.NORMAL)
+
     def week_leader(self) -> Participant | None:
         """Return one leader, or None for no points or a tie."""
-        totals = self.points_week()
+        totals = self.race_points_week()
         if not totals or max(totals.values(), default=0) == 0:
             return None
         highest = max(totals.values())
@@ -574,5 +623,7 @@ class ChoreRaceManager:
             "team_progress": {"completed": completed, "total": total_today},
             "points_today": self.points_today(),
             "points_week": self.points_week(),
+            "race_points_week": self.race_points_week(),
+            "normal_points_week": self.normal_points_week(),
             "week_leader_id": leader.id if leader else None,
         }

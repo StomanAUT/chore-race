@@ -18,6 +18,17 @@ create_participant:
       selector:
         number:
           mode: box
+    role:
+      default: child
+      selector:
+        select:
+          options:
+            - child
+            - adult
+    can_do_restricted_tasks:
+      default: false
+      selector:
+        boolean:
 
 create_recurrence_rule:
   name: Create recurrence rule
@@ -78,6 +89,15 @@ update_participant:
       selector:
         number:
           mode: box
+    role:
+      selector:
+        select:
+          options:
+            - child
+            - adult
+    can_do_restricted_tasks:
+      selector:
+        boolean:
 
 create_chore_type:
   name: Create chore type

@@ -47,6 +47,8 @@ CREATE_PARTICIPANT_SCHEMA = vol.Schema(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order", default=0): vol.Coerce(int),
+        vol.Optional("role", default="child"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks", default=False): cv.boolean,
     }
 )
 UPDATE_PARTICIPANT_SCHEMA = vol.Schema(
@@ -57,6 +59,8 @@ UPDATE_PARTICIPANT_SCHEMA = vol.Schema(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order"): vol.Coerce(int),
+        vol.Optional("role"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks"): cv.boolean,
     }
 )
 CREATE_CHORE_TYPE_SCHEMA = vol.Schema(
