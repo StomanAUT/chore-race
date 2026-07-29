@@ -20,4 +20,4 @@ async def test_user_flow_creates_single_entry(hass, enable_custom_integrations):
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
     assert result["type"] is FlowResultType.ABORT
-    assert result["reason"] == "already_configured"
+    assert result["reason"] == "single_instance_allowed"

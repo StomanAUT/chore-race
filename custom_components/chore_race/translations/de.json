@@ -8,7 +8,8 @@
       }
     },
     "abort": {
-      "already_configured": "Chore Race ist bereits eingerichtet."
+      "already_configured": "Chore Race ist bereits eingerichtet.",
+      "single_instance_allowed": "Es ist nur eine Chore-Race-Instanz erlaubt."
     }
   },
   "entity": {
