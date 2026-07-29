@@ -63,6 +63,48 @@
       "label_de": "Wäsche",
       "file": "laundry.png",
       "mdi_fallback": "mdi:washing-machine"
+    },
+    {
+      "id": "dishwasher",
+      "label_de": "Geschirrspüler ein-/ausräumen",
+      "file": "dishwasher.png",
+      "mdi_fallback": "mdi:dishwasher"
+    },
+    {
+      "id": "vacuum",
+      "label_de": "Staubsaugen",
+      "file": "vacuum.png",
+      "mdi_fallback": "mdi:vacuum"
+    },
+    {
+      "id": "clean-windows",
+      "label_de": "Fenster putzen",
+      "file": "clean-windows.png",
+      "mdi_fallback": "mdi:squeegee"
+    },
+    {
+      "id": "make-bed",
+      "label_de": "Bett machen",
+      "file": "make-bed.png",
+      "mdi_fallback": "mdi:bed"
+    },
+    {
+      "id": "cooking",
+      "label_de": "Kochen",
+      "file": "cooking.png",
+      "mdi_fallback": "mdi:pot-steam"
+    },
+    {
+      "id": "mow-lawn",
+      "label_de": "Rasen mähen",
+      "file": "mow-lawn.png",
+      "mdi_fallback": "mdi:lawn-mower"
+    },
+    {
+      "id": "feed-pets",
+      "label_de": "Tiere füttern",
+      "file": "feed-pets.png",
+      "mdi_fallback": "mdi:bowl-mix"
     }
   ]
 }

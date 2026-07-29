@@ -25,6 +25,13 @@
     ["clean-bathroom", "Bad reinigen", "clean-bathroom.png", "mdi:shower"],
     ["clean-toilet", "WC reinigen", "clean-toilet.png", "mdi:toilet"],
     ["laundry", "Wäsche", "laundry.png", "mdi:washing-machine"],
+    ["dishwasher", "Geschirrspüler", "dishwasher.png", "mdi:dishwasher"],
+    ["vacuum", "Staubsaugen", "vacuum.png", "mdi:vacuum"],
+    ["clean-windows", "Fenster putzen", "clean-windows.png", "mdi:squeegee"],
+    ["make-bed", "Bett machen", "make-bed.png", "mdi:bed"],
+    ["cooking", "Kochen", "cooking.png", "mdi:pot-steam"],
+    ["mow-lawn", "Rasen mähen", "mow-lawn.png", "mdi:lawn-mower"],
+    ["feed-pets", "Tiere füttern", "feed-pets.png", "mdi:bowl-mix"],
   ];
 
   const today = () => {
@@ -253,7 +260,7 @@
             {
               name: values.get("name").trim(),
               default_race_points: Number(values.get("points")),
-              icon: values.get("icon").trim() || null,
+              icon: values.get("icon")?.trim() || "mdi:check",
               image: values.get("image") || null,
               difficulty: values.get("difficulty") || null,
             },
@@ -279,6 +286,20 @@
           if (iconSelect && fallback) {
             iconSelect.value = fallback;
             iconSelect.dispatchEvent(new Event("change"));
+          }
+          const preview = event.currentTarget
+            .closest("form")
+            ?.querySelector("[data-image-preview]");
+          if (preview) {
+            preview.querySelector("img")?.setAttribute(
+              "src",
+              event.currentTarget.value,
+            );
+            const label = event.currentTarget
+              .closest(".image-option")
+              ?.querySelector("span")?.textContent;
+            const previewLabel = preview.querySelector("[data-preview-label]");
+            if (previewLabel && label) previewLabel.textContent = label;
           }
         });
       });
@@ -588,15 +609,13 @@
                     required value="${item.default_race_points}"></label>
                   <label>Schwierigkeit<select name="difficulty">${difficultyOptions}</select></label>
                 </div>
-                <label>Symbol<div class="icon-field">
-                  <span class="icon-preview"><ha-icon
-                    icon="${escapeHtml(item.icon || "mdi:check")}"></ha-icon></span>
-                  <select name="icon">${this._iconOptions(item.icon || "mdi:check")}</select>
-                </div></label>
+                <input type="hidden" name="icon"
+                  value="${escapeHtml(item.icon || "mdi:check")}">
                 <details class="image-picker compact-picker">
-                  <summary><strong>Aufgabenbild ändern</strong>
-                    <small>10 Motive oder nur das MDI-Symbol</small></summary>
-                  <div>${this._taskImagePicker(item.image, true)}</div>
+                  <summary>${this._taskImagePreview(item.image)}
+                    <span><strong>Aufgabenbild ändern</strong>
+                    <small>${TASK_IMAGES.length} Motive anzeigen</small></span></summary>
+                  <div>${this._taskImagePicker(item.image)}</div>
                 </details>
                 <label class="check"><input name="adult_only" type="checkbox"
                   ${item.adult_only ? "checked" : ""}> Nur Erwachsene</label>
@@ -732,24 +751,14 @@
       return `<ha-icon icon="${escapeHtml(chore?.icon || "mdi:check")}"></ha-icon>`;
     }
 
-    _taskImagePicker(selectedImage = undefined, allowNone = false) {
+    _taskImagePicker(selectedImage = undefined) {
       const normalizedImage = selectedImage?.replace(
         /^\/chore-race-assets\//,
         `${TASK_IMAGE_BASE}/`,
       );
       const effectiveImage =
-        selectedImage === undefined
-          ? `${TASK_IMAGE_BASE}/${TASK_IMAGES[0][2]}`
-          : normalizedImage;
-      const noneOption = allowNone
-        ? `<label class="image-option">
-            <input type="radio" name="image" value=""
-              ${effectiveImage ? "" : "checked"}>
-            <ha-icon icon="mdi:format-list-bulleted"></ha-icon>
-            <span>Nur Symbol</span>
-          </label>`
-        : "";
-      return `${noneOption}${TASK_IMAGES.map(
+        normalizedImage || `${TASK_IMAGE_BASE}/${TASK_IMAGES[0][2]}`;
+      return `${TASK_IMAGES.map(
         ([id, label, file, fallback]) => {
           const image = `${TASK_IMAGE_BASE}/${file}`;
           return `
@@ -765,6 +774,22 @@
       ).join("")}`;
     }
 
+    _taskImagePreview(selectedImage = undefined) {
+      const normalizedImage = selectedImage?.replace(
+        /^\/chore-race-assets\//,
+        `${TASK_IMAGE_BASE}/`,
+      );
+      const selected =
+        TASK_IMAGES.find(
+          ([, , file]) => `${TASK_IMAGE_BASE}/${file}` === normalizedImage,
+        ) ?? TASK_IMAGES[0];
+      const image = `${TASK_IMAGE_BASE}/${selected[2]}`;
+      return `<span class="selected-image" data-image-preview>
+        <img src="${escapeHtml(image)}" alt="">
+        <span data-preview-label>${escapeHtml(selected[1])}</span>
+      </span>`;
+    }
+
     _render() {
       if (!this.shadowRoot) return;
       const disabled = this._saving ? "disabled" : "";
@@ -773,17 +798,25 @@
         <style>${this._styles()}</style>
         <ha-card>
           <header>
-            <div><span class="eyebrow">VERWALTUNG</span>
-              <h2>${escapeHtml(this._config.title || "Chore Race Planer")}</h2></div>
+            <div><span class="eyebrow">CHORE RACE · VERWALTUNG</span>
+              <h2>${escapeHtml(this._config.title || "Chore Race Planer")}</h2>
+              <p class="subtitle">Familie, Aufgaben und Zeitpläne an einem Ort.</p></div>
             <button class="refresh" data-action="refresh" title="Neu laden"
               ${disabled}>↻</button>
           </header>
           ${this._loading ? '<div class="loading">Live-Daten werden geladen …</div>' : ""}
           ${this._notice ? `<p class="notice">${escapeHtml(this._notice)}</p>` : ""}
           ${this._error ? `<p class="error">${escapeHtml(this._error)}</p>` : ""}
+          <nav class="overview" aria-label="Planer-Übersicht">
+            <span><strong>${this._data.participants.filter((item) => item.active).length}</strong> Teilnehmer</span>
+            <span><strong>${this._data.choreTypes.filter((item) => item.active).length}</strong> Aufgabentypen</span>
+            <span><strong>${this._data.tasks.filter((item) => item.status === "open").length}</strong> offene Aufgaben</span>
+          </nav>
           <div class="forms">
-            <form data-form="participant">
-              <h3><span>1</span> Teilnehmer</h3>
+            <form data-form="participant" class="create-panel">
+              <div class="section-head"><span class="step">1</span><div>
+                <h3>Teilnehmer</h3><p>Person aus Home Assistant übernehmen oder neu benennen.</p>
+              </div></div>
               <label>Home-Assistant-Person<select name="person_entity_id">
                 <option value="">Keine – Namen manuell eingeben</option>
                 ${this._personOptions()}
@@ -800,8 +833,10 @@
               </div>
               <button ${disabled}>Teilnehmer anlegen</button>
             </form>
-            <form data-form="chore">
-              <h3><span>2</span> Aufgabentyp</h3>
+            <form data-form="chore" class="create-panel">
+              <div class="section-head"><span class="step">2</span><div>
+                <h3>Aufgabentyp</h3><p>Motiv, Wertung und Schwierigkeit festlegen.</p>
+              </div></div>
               <label>Bezeichnung<input required maxlength="100" name="name"
                 placeholder="z. B. Geschirrspüler"></label>
               <div class="row">
@@ -812,41 +847,24 @@
                   <option value="medium">Mittel</option><option value="hard">Schwer</option>
                 </select></label>
               </div>
-              <label>Icon<div class="icon-field">
-                <span class="icon-preview"><ha-icon icon="mdi:check"></ha-icon></span>
-                <select name="icon">
-                  <option value="mdi:check">Allgemein</option>
-                  <option value="mdi:dishwasher">Geschirrspüler</option>
-                  <option value="mdi:broom">Kehren / Putzen</option>
-                  <option value="mdi:vacuum">Staubsaugen</option>
-                  <option value="mdi:washing-machine">Wäsche</option>
-                  <option value="mdi:trash-can-outline">Müll</option>
-                  <option value="mdi:package-variant">Aufräumen</option>
-                  <option value="mdi:feather">Abstauben</option>
-                  <option value="mdi:trash-can">Bio-Müll</option>
-                  <option value="mdi:delete">Restmüll</option>
-                  <option value="mdi:file-document">Papier</option>
-                  <option value="mdi:bottle-soda">Plastik</option>
-                  <option value="mdi:shower">Bad reinigen</option>
-                  <option value="mdi:bed">Bett / Schlafzimmer</option>
-                  <option value="mdi:food-apple-outline">Küche / Essen</option>
-                  <option value="mdi:flower">Garten</option>
-                  <option value="mdi:dog">Haustier</option>
-                  <option value="mdi:toilet">Bad / WC</option>
-                  <option value="mdi:toy-brick-outline">Spielzeug</option>
-                </select>
-              </div></label>
+              <input type="hidden" name="icon"
+                value="${escapeHtml(TASK_IMAGES[0][3])}">
               <details class="image-picker">
-                <summary><strong>Aufgabenbild auswählen</strong>
-                  <small>10 moderne Motive anzeigen</small></summary>
+                <summary>${this._taskImagePreview()}
+                  <span><strong>Aufgabenbild</strong>
+                    <small>${TASK_IMAGES.length} Motive anzeigen</small></span></summary>
                 <div>${this._taskImagePicker()}</div>
               </details>
               <button ${disabled}>Aufgabentyp anlegen</button>
             </form>
-            <section class="types"><h3>Vorhandene Aufgabentypen</h3>
+            <section class="types"><div class="list-head"><div><h3>Aufgabentypen</h3>
+              <p>Bestehende Vorlagen ansehen und bearbeiten.</p></div>
+              <span>${this._data.choreTypes.length}</span></div>
               <ul>${this._choreTypeList()}</ul></section>
-            <form data-form="task">
-              <h3><span>3</span> Aufgabe einplanen</h3>
+            <form data-form="task" class="create-panel task-panel">
+              <div class="section-head"><span class="step">3</span><div>
+                <h3>Aufgabe einplanen</h3><p>Einmaligen Termin oder Wiederholung erstellen.</p>
+              </div></div>
               <label>Aufgabentyp<select required name="chore_type_id">
                 <option value="">Bitte wählen</option>${this._choreOptions()}
               </select></label>
@@ -872,9 +890,14 @@
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
             </form>
           </div>
-          <section class="rules"><h3>Wiederholungsregeln</h3>
+          <section class="rules"><div class="list-head"><div><h3>Wiederholungsregeln</h3>
+            <p>Automatische Zeitpläne pausieren oder verwalten.</p></div>
+            <span>${this._data.recurrenceRules.length}</span></div>
             ${this._recurrenceRuleList()}</section>
-          <section class="tasks"><h3>Offene Aufgaben</h3><ul>${this._taskList()}</ul></section>
+          <section class="tasks"><div class="list-head"><div><h3>Offene Aufgaben</h3>
+            <p>Geplante Aufgaben prüfen und korrigieren.</p></div>
+            <span>${this._data.tasks.filter((item) => item.status === "open").length}</span></div>
+            <ul>${this._taskList()}</ul></section>
         </ha-card>`;
       this._bindEvents();
     }
@@ -896,22 +919,37 @@
           --surface-raised:var(--secondary-background-color,#f5f4ff);
           --line:var(--divider-color,rgba(105,92,255,.18)); }
         * { box-sizing:border-box; }
-        ha-card { display:block; color:var(--ink); padding:clamp(18px,3vw,28px);
-          border-radius:24px; background:linear-gradient(145deg,var(--surface),
-            color-mix(in srgb,var(--surface) 92%,var(--accent)));
-          box-shadow:0 18px 55px rgba(31,38,90,.14);
+        ha-card { display:block; color:var(--ink); padding:clamp(18px,3vw,30px);
+          border-radius:24px; background:var(--surface);
+          box-shadow:var(--ha-card-box-shadow,0 12px 36px rgba(31,38,90,.1));
           font-family:var(--paper-font-body1_-_font-family,system-ui,sans-serif); }
         header { display:flex; align-items:center; justify-content:space-between; gap:16px; }
         .eyebrow { color:var(--accent); font-size:11px; font-weight:800; letter-spacing:.16em; }
-        h2 { margin:4px 0 0; font-size:clamp(23px,5vw,32px); line-height:1; }
-        h3 { margin:0 0 14px; font-size:15px; }
-        h3 span { display:inline-grid; place-items:center; width:24px; height:24px;
-          margin-right:7px; border-radius:8px; color:#fff; background:var(--accent); }
+        h2 { margin:4px 0 0; font-size:clamp(25px,5vw,34px); line-height:1.05;
+          letter-spacing:-.025em; }
+        h3 { margin:0; font-size:16px; }
+        .subtitle,.section-head p,.list-head p { margin:5px 0 0; color:var(--muted);
+          font-size:12px; line-height:1.45; }
         .refresh { width:42px; height:42px; padding:0; font-size:22px; border-radius:14px; }
+        .overview { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+          gap:8px; margin-top:20px; }
+        .overview span { padding:10px 12px; color:var(--muted); background:var(--surface-raised);
+          border:1px solid var(--line); border-radius:12px; font-size:11px; }
+        .overview strong { display:block; margin-bottom:2px; color:var(--ink); font-size:18px; }
         .forms { display:grid; grid-template-columns:1fr;
-          gap:14px; margin-top:20px; align-items:start; }
-        form,.tasks,.types,.rules { padding:16px; border:1px solid var(--line);
-          border-radius:18px; background:var(--surface-raised); }
+          gap:16px; margin-top:16px; align-items:start; }
+        form,.tasks,.types,.rules { padding:18px; border:1px solid var(--line);
+          border-radius:18px; background:color-mix(in srgb,var(--surface-raised) 72%,var(--surface)); }
+        .section-head { display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
+        .step { display:grid; place-items:center; flex:0 0 26px; height:26px; color:var(--ink);
+          background:color-mix(in srgb,var(--accent) 17%,var(--surface));
+          border:1px solid color-mix(in srgb,var(--accent) 32%,var(--line));
+          border-radius:9px; font-size:12px; font-weight:800; }
+        .list-head { display:flex; align-items:flex-start; justify-content:space-between;
+          gap:12px; margin-bottom:14px; }
+        .list-head > span { min-width:30px; padding:5px 8px; color:var(--muted);
+          background:var(--surface); border:1px solid var(--line); border-radius:99px;
+          text-align:center; font-size:11px; font-weight:700; }
         label { display:grid; gap:6px; margin:10px 0; color:var(--muted);
           font-size:12px; font-weight:700; }
         input,select { width:100%; min-height:42px; padding:9px 11px; color:var(--ink);
@@ -919,24 +957,30 @@
         input:focus,select:focus { outline:3px solid rgba(105,92,255,.17);
           border-color:var(--accent); }
         button { min-height:42px; padding:9px 14px; color:var(--ink);
-          background:color-mix(in srgb,var(--accent) 28%,var(--surface));
-          border:1px solid color-mix(in srgb,var(--accent) 55%,var(--line));
+          background:var(--surface); border:1px solid var(--line);
           border-radius:11px; font:inherit; font-weight:750; cursor:pointer; }
-        button:hover { background:color-mix(in srgb,var(--accent) 38%,var(--surface)); }
+        button:hover { background:color-mix(in srgb,var(--accent) 12%,var(--surface)); }
         form button { width:100%; margin-top:6px; }
+        .create-panel > button { background:color-mix(in srgb,var(--accent) 20%,var(--surface));
+          border-color:color-mix(in srgb,var(--accent) 38%,var(--line)); }
         button:disabled { cursor:not-allowed; opacity:.45; }
         .row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
         .check { display:flex; flex-direction:row; align-items:center; }
         .check input { width:20px; min-height:20px; }
-        .icon-field { display:grid; grid-template-columns:46px 1fr; gap:8px; }
-        .icon-preview { display:grid; place-items:center; color:var(--ink);
-          background:var(--surface); border:1px solid var(--line); border-radius:10px; }
-        .icon-preview ha-icon,.task-icon ha-icon { width:20px; height:20px; }
+        .task-icon ha-icon { width:20px; height:20px; }
         .task-icon img { width:30px; height:30px; object-fit:contain; }
         .image-picker { margin:10px 0; padding:0; border:0; }
         .image-picker > summary { padding:10px 12px; color:var(--ink);
           background:var(--surface); border:1px solid var(--line);
           border-radius:11px; font-size:12px; }
+        .image-picker > summary { display:grid; grid-template-columns:auto 1fr;
+          align-items:center; gap:10px; list-style:none; }
+        .image-picker > summary::-webkit-details-marker { display:none; }
+        .selected-image { display:flex; align-items:center; gap:8px; min-width:0; }
+        .selected-image img { width:42px; height:42px; flex:0 0 42px; object-fit:contain;
+          padding:3px; background:var(--surface-raised); border-radius:10px; }
+        .selected-image > span { max-width:90px; overflow:hidden; color:var(--muted);
+          font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
         .image-picker > summary small { display:block; margin-top:3px;
           color:var(--muted); font-weight:400; }
         .image-picker[open] > summary { margin-bottom:8px; border-color:var(--accent); }
@@ -967,8 +1011,8 @@
         .tasks,.types,.rules { margin-top:14px; }
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
-        li { display:flex; gap:10px; align-items:center; padding:10px; border-radius:12px;
-          background:color-mix(in srgb,var(--surface-raised) 92%,var(--accent)); }
+        li { display:flex; gap:12px; align-items:center; padding:12px; border:1px solid var(--line);
+          border-radius:13px; background:var(--surface); }
         li > span:nth-child(2),li details { min-width:0; flex:1; }
         li.inactive { opacity:.68; }
         summary { cursor:pointer; }
@@ -979,15 +1023,17 @@
           border-radius:8px; font-size:10px; font-weight:750;
           transform:translateY(-50%); }
         .edit-hint ha-icon { width:15px; height:15px; }
-        .compact-form { margin-top:10px; padding:12px; border-radius:12px; }
+        .compact-form { margin-top:12px; padding:14px; border-radius:12px;
+          background:color-mix(in srgb,var(--surface-raised) 74%,var(--surface)); }
         .actions,.rule-actions { display:flex; flex-wrap:wrap; gap:8px; }
         .actions button,.rule-actions button { width:auto; margin:0; }
         button.secondary { background:var(--surface); }
         button.danger { color:var(--primary-text-color);
           background:color-mix(in srgb,var(--error-color,#db4437) 14%,var(--surface)); }
         li small { display:block; margin-top:3px; color:var(--muted); font-size:11px; }
-        .task-icon { display:grid; place-items:center; flex:0 0 32px; height:32px;
-          color:#fff; background:var(--accent); border-radius:10px; }
+        .task-icon { display:grid; place-items:center; flex:0 0 38px; height:38px;
+          color:var(--ink); background:color-mix(in srgb,var(--accent) 14%,var(--surface));
+          border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line)); border-radius:11px; }
         .empty { margin:0; padding:14px; color:var(--muted); text-align:center; }
         @container (min-width:760px) {
           .forms { grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -999,11 +1045,15 @@
           ha-card { padding:16px; border-radius:18px; }
           header { align-items:flex-start; }
           h2 { overflow-wrap:anywhere; }
+          .overview { grid-template-columns:1fr; }
+          .overview span { display:flex; align-items:baseline; gap:6px; }
+          .overview strong { display:inline; margin:0; }
           form,.tasks,.types,.rules { padding:13px; }
           .rule-actions { width:100%; padding-left:42px; }
           .manageable > details > summary { padding-right:32px; }
           .edit-hint { padding:4px; font-size:0; }
           .edit-hint ha-icon { width:18px; height:18px; }
+          .image-picker > div { grid-template-columns:repeat(2,minmax(0,1fr)); }
         }
       `;
     }

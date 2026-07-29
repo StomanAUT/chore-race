@@ -18,8 +18,37 @@ Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 | `chore_race/get_settings` | Planner and race-ready settings |
 | `chore_race/get_state` | Compact team/today state |
 | `chore_race/get_leaderboard` | Current-week totals |
+| `chore_race/get_race_state` | Current/latest race, countdown, open tasks and leaderboard |
+| `chore_race/get_recurrence_rules` | Persisted recurrence rules |
+
+## Authenticated race completion
+
+Any authenticated household dashboard may report a task completed during an
+active race:
+
+```json
+{
+  "type": "chore_race/complete_race_task",
+  "task_id": "stable-task-id",
+  "participant_id": "stable-participant-id"
+}
+```
+
+The response is the refreshed race state. The server rejects inactive
+participants, adult-only permission violations, blocked or already completed
+tasks, and requests made without a running race.
 
 ## Admin mutations
+
+Race lifecycle mutations are admin-only:
+
+```json
+{"type": "chore_race/start_race"}
+```
+
+```json
+{"type": "chore_race/stop_race"}
+```
 
 ### Create a participant
 

@@ -1,20 +1,21 @@
-# Chore Race card animation prototype
+# Chore Race Lovelace cards
 
-This directory contains an **experimental, dependency-free** Lovelace card
-prototype. It is deliberately not bundled, copied, registered, or installed by
-the Chore Race integration.
+This directory contains the dependency-free race and planner Lovelace cards.
+They are currently installed as manual Home Assistant resources while the
+packaging flow is still being stabilized.
 
-The card visualizes:
+The card visualizes and operates:
 
 - responsive participant lanes with transform-based car movement;
 - weekly points from the existing `chore_race/get_leaderboard` command;
 - team task progress from the existing `chore_race/get_state` command;
 - participant metadata from `chore_race/get_participants`;
+- today's open race tasks as responsive image-first cards;
+- a touch-friendly participant picker for completing a task during a race;
+- immediate task and leaderboard refresh after a successful completion;
 - automatic and configurable reduced-motion behavior;
 - safe connection cleanup, bounded refresh intervals, stale-request rejection,
   and last-known-state display when an API call fails.
-
-No backend contract or storage data is changed.
 
 ## Local preview
 
@@ -73,10 +74,33 @@ the available dashboard column width.
 `force_reduced_motion: true` to disable animation regardless of the operating
 system preference.
 
+## Race completion flow
+
+While `chore_race/get_race_state` reports `running`, each open task exposes an
+**Erledigt** action. It opens a participant picker and calls
+`chore_race/complete_race_task`. The backend remains authoritative for active
+race state, participant permissions, adult-only chores, duplicate completion,
+scoring, and persistence. Ready and finished races never show a misleading
+completion button.
+
+Administrators can start a ready race or a new race after the previous finish
+directly from the card. During a running race they also receive a quiet
+secondary stop action that requires confirmation. Both actions use the
+admin-protected `chore_race/start_race` and `chore_race/stop_race` WebSocket
+commands.
+
+Task images are the primary visual. The configured Material Design icon is
+used only when a chore type has no image. Area IDs are resolved through Home
+Assistant's Area Registry. For adult-only chores, children without the explicit
+restricted-task permission remain visible in the picker but cannot be selected.
+Legacy `/chore-race-assets/` image paths are mapped to
+`/local/chore-race-icons/`, and task artwork is fitted without cropping.
+
 ## Prototype boundaries
 
-- Read-only; it does not complete tasks or mutate Home Assistant.
-- Uses only the v0.1 WebSocket commands.
+- Household-level mutations are limited to completing tasks during an active
+  race.
+- Race start and stop controls are visible only to Home Assistant admins.
 - Does not yet subscribe to push events; it refreshes while connected and
   visible.
 - Styling and the points-to-distance mapping are experimental.

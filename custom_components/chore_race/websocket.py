@@ -9,6 +9,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
+from .errors import ChoreRaceError
 
 
 def _manager(hass: HomeAssistant) -> Any:
@@ -135,6 +136,36 @@ def websocket_get_race_state(
     connection.send_result(msg["id"], manager.race_state())
 
 
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/complete_race_task",
+        vol.Required("task_id"): vol.All(str, vol.Length(min=1, max=64)),
+        vol.Required("participant_id"): vol.All(str, vol.Length(min=1, max=64)),
+    }
+)
+async def websocket_complete_race_task(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Complete one task during an active race."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    try:
+        await manager.async_complete_task(
+            msg["task_id"],
+            msg["participant_id"],
+            require_active_race=True,
+        )
+    except ChoreRaceError as err:
+        connection.send_error(msg["id"], "chore_race_error", str(err))
+        return
+    connection.send_result(msg["id"], manager.race_state())
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """Register all authenticated commands once."""
     for command in (
@@ -144,5 +175,6 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         websocket_get_chore_types,
         websocket_get_leaderboard,
         websocket_get_race_state,
+        websocket_complete_race_task,
     ):
         websocket_api.async_register_command(hass, command)

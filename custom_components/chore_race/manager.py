@@ -536,7 +536,11 @@ class ChoreRaceManager:
             await self._async_commit()
 
     async def async_complete_task(
-        self, task_id: str, participant_id: str
+        self,
+        task_id: str,
+        participant_id: str,
+        *,
+        require_active_race: bool = False,
     ) -> Completion:
         """Atomically complete a task once and award normal or race points."""
         async with self._mutation_lock:
@@ -559,6 +563,8 @@ class ChoreRaceManager:
                 raise ConflictError("Task already has an active completion")
             now = dt_util.utcnow()
             race = self._active_race(now)
+            if require_active_race and race is None:
+                raise ConflictError("No race is running")
             race_id = race["id"] if race is not None else None
             score = calculate_completion_score(
                 task, self._data.settings, race_id=race_id
@@ -654,6 +660,7 @@ class ChoreRaceManager:
                 key=lambda item: item["started_at"],
             )
         if race is None:
+            open_tasks = self._race_open_tasks()
             return {
                 "status": RaceStatus.READY.value,
                 "race_id": None,
@@ -661,6 +668,8 @@ class ChoreRaceManager:
                 "ends_at": None,
                 "remaining_seconds": 0,
                 "leaderboard": [],
+                "current_task": open_tasks[0] if open_tasks else None,
+                "open_tasks": open_tasks,
             }
         ends_at = datetime.fromisoformat(race["ends_at"])
         remaining = max(0, int((ends_at - current).total_seconds()))
@@ -682,6 +691,7 @@ class ChoreRaceManager:
             ),
             key=lambda item: (-item["points"], item["name"].casefold()),
         )
+        open_tasks = self._race_open_tasks()
         return {
             "status": status,
             "race_id": race["id"],
@@ -689,7 +699,37 @@ class ChoreRaceManager:
             "ends_at": race["ends_at"],
             "remaining_seconds": remaining,
             "leaderboard": leaderboard,
+            "current_task": open_tasks[0] if open_tasks else None,
+            "open_tasks": open_tasks,
         }
+
+    def _race_open_tasks(self) -> list[dict[str, Any]]:
+        """Return today's actionable tasks with stable presentation snapshots."""
+        today = self.today()
+        tasks = sorted(
+            (
+                task
+                for task in self._data.tasks.values()
+                if task.date == today
+                and task.status is TaskStatus.OPEN
+                and not task.blocked
+                and self._data.chore_types.get(task.chore_type_id) is not None
+                and self._data.chore_types[task.chore_type_id].active
+            ),
+            key=lambda task: (task.created_at, task.id),
+        )
+        return [
+            {
+                **task.to_dict(),
+                "name": self._data.chore_types[task.chore_type_id].name,
+                "image": self._data.chore_types[task.chore_type_id].image,
+                "icon": self._data.chore_types[task.chore_type_id].icon,
+                "adult_only": self._data.chore_types[
+                    task.chore_type_id
+                ].adult_only,
+            }
+            for task in tasks
+        ]
 
     async def async_undo_completion(self, completion_id: str) -> Completion:
         """Revert a completion while preserving its audit history."""

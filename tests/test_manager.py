@@ -306,3 +306,33 @@ async def test_completion_during_race_persists_race_score(manager):
     assert manager.normal_points_week()[participant.id] == 0
     assert manager.week_leader() == participant
     assert manager.race_state()["leaderboard"][0]["points"] == 5
+
+
+async def test_race_state_exposes_open_task_and_updates_immediately(manager):
+    participant, chore_type, task = await _base_records(manager)
+    await manager.async_start_race()
+
+    before = manager.race_state()
+    assert before["current_task"]["id"] == task.id
+    assert before["current_task"]["name"] == chore_type.name
+    assert "image" in before["current_task"]
+    assert "icon" in before["current_task"]
+    assert len(before["open_tasks"]) == 1
+
+    await manager.async_complete_task(
+        task.id, participant.id, require_active_race=True
+    )
+
+    after = manager.race_state()
+    assert after["current_task"] is None
+    assert after["open_tasks"] == []
+    assert after["leaderboard"][0]["points"] == task.race_points
+
+
+async def test_race_completion_requires_running_session(manager):
+    participant, _, task = await _base_records(manager)
+
+    with pytest.raises(ConflictError, match="No race is running"):
+        await manager.async_complete_task(
+            task.id, participant.id, require_active_race=True
+        )

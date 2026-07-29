@@ -1,8 +1,8 @@
 /**
- * Chore Race card animation prototype.
+ * Interactive Chore Race Lovelace card.
  *
- * Experimental: this file is not registered as a Home Assistant resource by
- * the integration. It only consumes the read-only v0.1 WebSocket API.
+ * The card renders the current race and lets authenticated household
+ * dashboards complete tasks. Race lifecycle controls remain admin-only.
  */
 (() => {
   const DEMO_DATA = {
@@ -27,6 +27,35 @@
       .replaceAll("'", "&#039;");
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const assetUrl = (value) =>
+    String(value ?? "").replace(
+      /^\/chore-race-assets\//,
+      "/local/chore-race-icons/",
+    );
+  const suggestedTaskImage = (name) => {
+    const normalized = String(name ?? "").toLocaleLowerCase("de");
+    const suggestions = [
+      [/geschirrsp|spülmaschine/, "dishwasher.png"],
+      [/waschmaschine|wäsche/, "laundry.png"],
+      [/staubsaug/, "vacuum.png"],
+      [/fenster/, "clean-windows.png"],
+      [/\bbett\b/, "make-bed.png"],
+      [/koch|essen/, "cooking.png"],
+      [/rasen/, "mow-lawn.png"],
+      [/tier|fütter|futter/, "feed-pets.png"],
+      [/\bwc\b|toilette/, "clean-toilet.png"],
+      [/\bbad\b|dusche/, "clean-bathroom.png"],
+      [/bio.*müll/, "organic-waste.png"],
+      [/rest.*müll|müll/, "general-waste.png"],
+      [/papier/, "paper.png"],
+      [/plastik/, "plastic.png"],
+      [/wisch|boden/, "mop-floor.png"],
+      [/staub/, "dust.png"],
+      [/aufräum/, "tidy-up.png"],
+    ];
+    const match = suggestions.find(([pattern]) => pattern.test(normalized));
+    return match ? `/local/chore-race-icons/${match[1]}` : undefined;
+  };
 
   const errorMessage = (error) => {
     if (error instanceof Error) return error.message;
@@ -100,6 +129,11 @@
       this._refreshTimer = undefined;
       this._countdownTimer = undefined;
       this._motionQuery = undefined;
+      this._participants = [];
+      this._areas = {};
+      this._selectedTaskId = undefined;
+      this._actionBusy = false;
+      this._actionError = undefined;
       this._onMotionChange = () => this._render();
       this._onVisibilityChange = () => {
         if (!document.hidden) this._load();
@@ -185,18 +219,25 @@
           raceState = await this._hass.callWS({
             type: "chore_race/get_race_state",
           });
-        } catch (_error) {
+        } catch (error) {
+          this._raceApiError = errorMessage(error);
           raceState = undefined;
         }
         if (raceState) {
+          this._raceApiError = undefined;
           this._raceReceivedAt = Date.now();
-          const [participants, state] = await Promise.all([
+          const [participants, state, areas] = await Promise.all([
             this._hass.callWS({ type: "chore_race/get_participants" }),
             this._hass.callWS({ type: "chore_race/get_state" }),
+            this._hass.callWS({ type: "chore_race/get_areas" }),
           ]);
           if (!this._connected || generation !== this._requestGeneration) return;
           const participantById = Object.fromEntries(
             participants.map((participant) => [participant.id, participant]),
+          );
+          this._participants = participants.filter((participant) => participant.active);
+          this._areas = Object.fromEntries(
+            areas.map((area) => [area.area_id, area.name]),
           );
           this._data = {
             raceState,
@@ -251,13 +292,104 @@
             avatar: participantById[entry.participant_id]?.avatar,
           })),
         };
-        this._error = undefined;
+        this._error = this._raceApiError
+          ? `Race API nicht verfügbar · ${this._raceApiError}`
+          : undefined;
         this._syncCountdownTimer();
       } catch (error) {
         if (!this._connected || generation !== this._requestGeneration) return;
         this._error = errorMessage(error);
       }
       this._render();
+    }
+
+    async _completeRaceTask(participantId) {
+      if (
+        !this._hass?.callWS ||
+        !this._selectedTaskId ||
+        this._actionBusy ||
+        this._data?.raceState?.status !== "running"
+      ) {
+        return;
+      }
+      this._actionBusy = true;
+      this._actionError = undefined;
+      this._render();
+      try {
+        const raceState = await this._hass.callWS({
+          type: "chore_race/complete_race_task",
+          task_id: this._selectedTaskId,
+          participant_id: participantId,
+        });
+        this._selectedTaskId = undefined;
+        this._raceReceivedAt = Date.now();
+        this._data = {
+          ...this._data,
+          raceState,
+          leaderboard: raceState.leaderboard ?? [],
+        };
+        await this._load();
+      } catch (error) {
+        this._actionError = errorMessage(error);
+      } finally {
+        this._actionBusy = false;
+        this._render();
+      }
+    }
+
+    async _changeRace(action) {
+      if (!this._hass?.callWS || this._actionBusy) return;
+      if (
+        action === "stop_race" &&
+        !window.confirm("Rennen wirklich beenden?")
+      ) {
+        return;
+      }
+      this._actionBusy = true;
+      this._actionError = undefined;
+      this._render();
+      try {
+        await this._hass.callWS({ type: `chore_race/${action}` });
+        await this._load();
+      } catch (error) {
+        this._actionError = errorMessage(error);
+      } finally {
+        this._actionBusy = false;
+        this._render();
+      }
+    }
+
+    _bindRaceActions() {
+      this.shadowRoot.querySelector("[data-start-race]")?.addEventListener(
+        "click",
+        () => this._changeRace("start_race"),
+      );
+      this.shadowRoot.querySelector("[data-stop-race]")?.addEventListener(
+        "click",
+        () => this._changeRace("stop_race"),
+      );
+      this.shadowRoot.querySelectorAll("[data-complete-task]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (this._data?.raceState?.status !== "running") return;
+          this._selectedTaskId = button.dataset.completeTask;
+          this._actionError = undefined;
+          this._render();
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-participant]").forEach((button) => {
+        button.addEventListener("click", () =>
+          this._completeRaceTask(button.dataset.participant),
+        );
+      });
+      this.shadowRoot.querySelector("[data-close-picker]")?.addEventListener(
+        "click",
+        () => {
+          if (this._actionBusy) return;
+          this._selectedTaskId = undefined;
+          this._actionError = undefined;
+          this._render();
+        },
+      );
     }
 
     _remainingSeconds() {
@@ -307,7 +439,7 @@
       const statusCopy = {
         ready: {
           eyebrow: "RENNEN BEREIT",
-          heading: "Startet in",
+          heading: "Startlinie",
           detail: "Macht euch bereit",
         },
         running: {
@@ -338,6 +470,12 @@
       const reducedMotion =
         this._config.force_reduced_motion === true || this._motionQuery?.matches;
       const title = escapeHtml(this._config.title ?? "Chore Race");
+      const openTasks = race.open_tasks ?? [];
+      const running = status === "running";
+      const isAdmin = this._hass?.user?.is_admin === true;
+      const selectedTask = openTasks.find(
+        (task) => task.id === this._selectedTaskId,
+      );
 
       const lanes = racers.length
         ? racers
@@ -374,6 +512,86 @@
             .join("")
         : `<div class="empty">Noch keine aktiven Teilnehmer.</div>`;
 
+      const taskCards = openTasks.length
+        ? openTasks
+            .map((task) => {
+              const imageUrl =
+                (task.image && assetUrl(task.image)) ??
+                suggestedTaskImage(task.name);
+              const image = imageUrl
+                ? `<img class="task-image" src="${escapeHtml(imageUrl)}"
+                    alt="" loading="lazy" />`
+                : `<div class="task-icon" aria-hidden="true">
+                    <ha-icon icon="${escapeHtml(task.icon ?? "mdi:checkbox-marked-circle-outline")}"></ha-icon>
+                  </div>`;
+              return `
+                <article class="task-card">
+                  ${image}
+                  <div class="task-copy">
+                    <div>
+                      <small>NÄCHSTE AUFGABE</small>
+                      <h3>${escapeHtml(task.name ?? "Aufgabe")}</h3>
+                      <span>${Number(task.race_points) || 0} Punkte${
+                        task.area_id && this._areas[task.area_id]
+                          ? ` · ${escapeHtml(this._areas[task.area_id])}`
+                          : ""
+                      }</span>
+                    </div>
+                    ${
+                      running
+                        ? `<button class="complete" data-complete-task="${escapeHtml(task.id)}"
+                            ${this._actionBusy ? "disabled" : ""}>Erledigt</button>`
+                        : `<span class="race-hint">${
+                            status === "ready"
+                              ? "Abschluss nach Rennstart möglich"
+                              : "Rennen ist beendet"
+                          }</span>`
+                    }
+                  </div>
+                </article>`;
+            })
+            .join("")
+        : `<div class="empty task-empty">Keine offenen Aufgaben für heute.</div>`;
+
+      const participantPicker = this._selectedTaskId
+        ? `<div class="picker-backdrop" role="presentation">
+            <section class="picker" role="dialog" aria-modal="true"
+              aria-labelledby="race-picker-title">
+              <div class="picker-heading">
+                <div><small>AUFGABE ERLEDIGT</small>
+                  <h3 id="race-picker-title">Wer war's?</h3></div>
+                <button class="close" data-close-picker aria-label="Schließen"
+                  ${this._actionBusy ? "disabled" : ""}>×</button>
+              </div>
+              <div class="participant-grid">
+                ${this._participants.length
+                  ? this._participants
+                      .map((participant) => {
+                        const restricted =
+                          selectedTask?.adult_only &&
+                          participant.role !== "adult" &&
+                          !participant.can_do_restricted_tasks;
+                        const avatar = participant.avatar
+                          ? `<img src="${escapeHtml(participant.avatar)}" alt="" />`
+                          : `<span>${escapeHtml(
+                              participant.name?.trim().charAt(0) || "?",
+                            )}</span>`;
+                        return `<button data-participant="${escapeHtml(participant.id)}"
+                          ${this._actionBusy || restricted ? "disabled" : ""}
+                          class="${restricted ? "restricted" : ""}">
+                          ${avatar}<strong>${escapeHtml(participant.name)}</strong>
+                          ${restricted ? "<small>Nur Erwachsene</small>" : ""}
+                        </button>`;
+                      })
+                      .join("")
+                  : `<p>Keine aktiven Teilnehmer verfügbar.</p>`}
+              </div>
+              ${this._actionBusy ? `<p class="action-status">Punkte werden gespeichert …</p>` : ""}
+              ${this._actionError ? `<p class="action-error">${escapeHtml(this._actionError)}</p>` : ""}
+            </section>
+          </div>`
+        : "";
+
       this.shadowRoot.innerHTML = `
         <style>${this._styles()}</style>
         <ha-card class="${reducedMotion ? "reduced-motion" : ""}">
@@ -388,8 +606,10 @@
             <div class="team-copy">
               <span>${statusCopy.heading}</span>
               <strong>${
-                status === "ready" || status === "running"
-                  ? this._formatDuration(remaining)
+                status === "ready"
+                  ? "Bereit"
+                  : status === "running"
+                    ? this._formatDuration(remaining)
                   : status === "finished"
                     ? "Fertig"
                     : `${completed} / ${total}`
@@ -403,6 +623,31 @@
                     <i style="--team-progress: ${teamProgress}%"></i></div>`
                 : ""
             }
+          </section>
+          ${
+            isAdmin && (status === "ready" || status === "finished")
+              ? `<button class="race-control start-race" data-start-race
+                  ${this._actionBusy ? "disabled" : ""}>
+                  ${
+                    this._actionBusy
+                      ? "Rennen startet …"
+                      : status === "finished"
+                        ? "Neues Rennen starten"
+                        : "Rennen starten"
+                  }
+                </button>`
+              : isAdmin && status === "running"
+                ? `<button class="race-control stop-race" data-stop-race
+                    ${this._actionBusy ? "disabled" : ""}>Rennen beenden</button>`
+                : ""
+          }
+          ${
+            this._actionError && !this._selectedTaskId
+              ? `<p class="action-error race-action-error">${escapeHtml(this._actionError)}</p>`
+              : ""
+          }
+          <section class="tasks" aria-label="Offene Race-Aufgaben">
+            ${taskCards}
           </section>
           <section class="lanes">${lanes}</section>
           <footer>
@@ -420,7 +665,9 @@
               ? `<p class="error">Letzter Stand &middot; ${escapeHtml(this._error)}</p>`
               : ""
           }
+          ${participantPicker}
         </ha-card>`;
+      this._bindRaceActions();
     }
 
     _styles() {
@@ -482,6 +729,58 @@
         .meter i { display: block; width: var(--team-progress); height: 100%; border-radius: inherit;
           background: linear-gradient(90deg, var(--accent), #54a995); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
         .lanes { display: grid; gap: 14px; }
+        .tasks { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+          gap:14px; margin:0 0 20px; }
+        .task-card { min-width:0; overflow:hidden; border:1px solid var(--line);
+          border-radius:20px; background:var(--surface-raised); }
+        .task-image, .task-icon { width:100%; height:clamp(180px,28vw,280px);
+          object-fit:contain; }
+        .task-image { padding:10px;
+          background:color-mix(in srgb,var(--accent) 7%,var(--surface)); }
+        .task-icon { display:grid; place-items:center;
+          color:var(--accent); background:color-mix(in srgb,var(--accent) 12%,var(--surface)); }
+        .task-icon ha-icon { --mdc-icon-size:clamp(52px,12vw,86px); }
+        .task-copy { display:flex; align-items:flex-end; justify-content:space-between;
+          gap:14px; padding:15px; }
+        .task-copy small, .picker-heading small { color:var(--accent); font-size:10px;
+          font-weight:800; letter-spacing:.12em; }
+        .task-copy h3, .picker h3 { margin:4px 0; color:var(--ink); font-size:19px; }
+        .task-copy span { color:var(--muted); font-size:12px; }
+        button { min-height:48px; border:0; border-radius:14px; padding:0 18px;
+          font:inherit; font-weight:750; cursor:pointer; touch-action:manipulation; }
+        button:focus-visible { outline:3px solid color-mix(in srgb,var(--accent) 45%,white);
+          outline-offset:2px; }
+        button:disabled { cursor:wait; opacity:.6; }
+        .complete { flex:0 0 auto; color:white; background:var(--accent); }
+        .race-control { width:100%; min-height:56px; margin:0 0 18px; }
+        .start-race { color:white; background:var(--accent); font-size:17px; }
+        .stop-race { min-height:48px; color:var(--muted);
+          background:transparent; border:1px solid var(--line); font-size:13px; }
+        .race-action-error { margin:-6px 0 18px; }
+        .race-hint { max-width:145px; text-align:right; }
+        .picker-backdrop { position:fixed; z-index:20; inset:0; display:grid;
+          place-items:center; padding:18px; background:rgba(5,10,20,.68); }
+        .picker { width:min(100%,520px); max-height:min(82vh,720px); overflow:auto;
+          padding:20px; border:1px solid var(--line); border-radius:24px;
+          color:var(--ink); background:var(--surface); box-shadow:0 24px 70px rgba(0,0,0,.35); }
+        .picker-heading { display:flex; align-items:flex-start; justify-content:space-between;
+          gap:16px; margin-bottom:16px; }
+        .picker h3 { font-size:26px; }
+        .close { width:48px; padding:0; color:var(--ink); background:var(--surface-raised);
+          font-size:28px; }
+        .participant-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
+          gap:12px; }
+        .participant-grid button { min-height:112px; display:grid; place-items:center;
+          gap:7px; padding:12px; color:var(--ink); background:var(--surface-raised);
+          border:1px solid var(--line); }
+        .participant-grid button.restricted { cursor:not-allowed; opacity:.46; }
+        .participant-grid button small { color:var(--muted); font-size:10px; }
+        .participant-grid img, .participant-grid span { width:58px; height:58px;
+          display:grid; place-items:center; object-fit:cover; border-radius:50%;
+          color:white; background:var(--accent); font-size:22px; }
+        .action-status, .action-error { margin:14px 0 0; text-align:center; font-size:13px; }
+        .action-status { color:var(--muted); }
+        .action-error { color:var(--error-color,#db4437); }
         .lane-heading { justify-content: space-between; margin-bottom: 6px;
           color: var(--ink); font-size: 12px; font-variant-numeric: tabular-nums; }
         .driver { gap: 8px; }
@@ -537,6 +836,11 @@
           .lane-heading { gap: 8px; }
           .driver { min-width: 0; }
           .driver strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .tasks { grid-template-columns:1fr; }
+          .task-copy { align-items:stretch; flex-direction:column; }
+          .complete { width:100%; }
+          .race-hint { max-width:none; text-align:left; }
+          .participant-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
         }
       `;
     }

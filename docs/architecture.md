@@ -25,3 +25,11 @@ the same policy.
 
 The compact card state uses scheduled-task counts for plan progress and keeps
 completion-timestamp counts as a separate manager API.
+
+## Chore artwork
+
+`ChoreType.image` is the primary visual used by the planner and race card.
+The normal planner UI therefore exposes only the curated task-image library.
+`ChoreType.icon` remains optional in storage and APIs as a compatibility
+fallback for older records, Home Assistant automations, and installations
+whose image asset is temporarily unavailable.
