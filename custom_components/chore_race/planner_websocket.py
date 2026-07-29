@@ -6,7 +6,6 @@ from datetime import date
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar

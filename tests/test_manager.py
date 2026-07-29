@@ -172,7 +172,7 @@ async def test_child_cannot_complete_adult_only_task_without_permission(manager)
 
 async def test_week_points_keep_normal_and_race_scores_separate(manager):
     participant, _, task = await _base_records(manager)
-    normal = await manager.async_complete_task(task.id, participant.id)
+    await manager.async_complete_task(task.id, participant.id)
     second = await manager.async_create_task(task.chore_type_id, manager.today())
     race = await manager.async_complete_task(second.id, participant.id)
     race.scoring_mode = ScoringMode.RACE

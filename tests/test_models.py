@@ -1,6 +1,6 @@
 """Serialization and historical snapshot tests."""
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from custom_components.chore_race.models import (
     ChoreRaceData,
@@ -11,7 +11,7 @@ from custom_components.chore_race.models import (
 
 def test_round_trip_storage_data():
     """Persisted state restores typed dates, datetimes and enums."""
-    now = datetime(2026, 7, 28, 12, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 28, 12, tzinfo=UTC)
     chore_type = ChoreType(id="type", name="Aufräumen", default_race_points=5)
     task = ChoreTask(
         id="task",

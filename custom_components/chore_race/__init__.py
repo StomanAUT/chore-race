@@ -6,13 +6,12 @@ from datetime import date
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN,
@@ -20,8 +19,8 @@ from .const import (
     SERVICE_COMPLETE_TASK,
     SERVICE_CREATE_CHORE_TYPE,
     SERVICE_CREATE_PARTICIPANT,
-    SERVICE_CREATE_TASK,
     SERVICE_CREATE_RECURRENCE_RULE,
+    SERVICE_CREATE_TASK,
     SERVICE_DELETE_TASK,
     SERVICE_UNDO_COMPLETION,
     SERVICE_UPDATE_CHORE_TYPE,

@@ -27,6 +27,7 @@ from .models import (
     Completion,
     Difficulty,
     Participant,
+    ScoringMode,
     Settings,
     TaskSource,
     TaskStatus,

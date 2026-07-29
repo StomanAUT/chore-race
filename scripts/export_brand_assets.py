@@ -4,7 +4,6 @@ from pathlib import Path
 
 from PIL import Image, ImageFilter
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "tmp" / "imagegen" / "chore-race-chroma.png"
 OUTPUT = ROOT / "brand_assets"
@@ -42,7 +41,8 @@ def main() -> None:
     image = image.crop(bounds)
     side = max(image.size)
     canvas = Image.new("RGBA", (side, side))
-    canvas.alpha_composite(image, ((side - image.width) // 2, (side - image.height) // 2))
+    position = ((side - image.width) // 2, (side - image.height) // 2)
+    canvas.alpha_composite(image, position)
 
     for size, filename in ((512, "icon.png"), (1024, "icon@2x.png")):
         exported = canvas.resize((size, size), Image.Resampling.LANCZOS)
