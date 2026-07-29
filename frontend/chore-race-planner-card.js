@@ -261,17 +261,20 @@
           );
         });
 
-      this.shadowRoot
-        .querySelector('[name="icon"]')
-        ?.addEventListener("change", (event) => {
-          this.shadowRoot
-            .querySelector(".icon-preview ha-icon")
+      this.shadowRoot.querySelectorAll('[name="icon"]').forEach((select) => {
+        select.addEventListener("change", (event) => {
+          event.currentTarget
+            .closest("form")
+            ?.querySelector(".icon-preview ha-icon")
             ?.setAttribute("icon", event.currentTarget.value);
         });
+      });
       this.shadowRoot.querySelectorAll('[name="image"]').forEach((input) => {
         input.addEventListener("change", (event) => {
           if (!event.currentTarget.checked) return;
-          const iconSelect = this.shadowRoot.querySelector('[name="icon"]');
+          const iconSelect = event.currentTarget
+            .closest("form")
+            ?.querySelector('[name="icon"]');
           const fallback = event.currentTarget.dataset.fallback;
           if (iconSelect && fallback) {
             iconSelect.value = fallback;
@@ -324,6 +327,8 @@
               chore_type_id: event.currentTarget.dataset.editChore,
               name: values.get("name").trim(),
               default_race_points: Number(values.get("points")),
+              icon: values.get("icon") || null,
+              image: values.get("image") || null,
               difficulty: values.get("difficulty") || null,
               adult_only: values.get("adult_only") === "on",
               confirmation_required:
@@ -340,6 +345,31 @@
             "update_chore_type",
             { chore_type_id: button.dataset.disableChore, active: false },
             "Aufgabentyp wurde deaktiviert.",
+          );
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-enable-chore]").forEach((button) => {
+        button.addEventListener("click", () =>
+          this._submit(
+            "update_chore_type",
+            { chore_type_id: button.dataset.enableChore, active: true },
+            "Aufgabentyp wurde aktiviert.",
+          ),
+        );
+      });
+      this.shadowRoot.querySelectorAll("[data-delete-chore]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (
+            !window.confirm(
+              "Diesen unbenutzten Aufgabentyp endgültig löschen?",
+            )
+          ) {
+            return;
+          }
+          this._submit(
+            "delete_chore_type",
+            { chore_type_id: button.dataset.deleteChore },
+            "Aufgabentyp wurde gelöscht.",
           );
         });
       });
@@ -401,14 +431,46 @@
             "Aufgabe wurde für den gewählten Tag eingeplant.",
           );
         });
+      this.shadowRoot.querySelectorAll("[data-edit-task]").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const values = new FormData(event.currentTarget);
+          this._submit(
+            "update_task",
+            {
+              task_id: event.currentTarget.dataset.editTask,
+              chore_type_id: values.get("chore_type_id"),
+              date: values.get("date"),
+              area_id: values.get("area_id") || null,
+              preferred_participant_id:
+                values.get("preferred_participant_id") || null,
+              race_points: Number(values.get("race_points")),
+              blocked: values.get("blocked") === "on",
+            },
+            "Offene Aufgabe wurde aktualisiert.",
+          );
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-delete-task]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (!window.confirm("Diese offene Aufgabe endgültig löschen?")) return;
+          this._submit(
+            "delete_task",
+            { task_id: button.dataset.deleteTask },
+            "Offene Aufgabe wurde gelöscht.",
+          );
+        });
+      });
     }
 
-    _participantOptions() {
+    _participantOptions(selectedId = null) {
       return this._data.participants
-        .filter((item) => item.active)
+        .filter((item) => item.active || item.id === selectedId)
         .map(
           (item) =>
-            `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`,
+            `<option value="${escapeHtml(item.id)}" ${
+              item.id === selectedId ? "selected" : ""
+            }>${escapeHtml(item.name)}${item.active ? "" : " (inaktiv)"}</option>`,
         )
         .join("");
     }
@@ -431,21 +493,62 @@
         .join("");
     }
 
-    _choreOptions() {
+    _choreOptions(selectedId = null) {
       return this._data.choreTypes
-        .filter((item) => item.active)
+        .filter((item) => item.active || item.id === selectedId)
         .map(
           (item) =>
-            `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)} · ${item.default_race_points} P</option>`,
+            `<option value="${escapeHtml(item.id)}" ${
+              item.id === selectedId ? "selected" : ""
+            }>${escapeHtml(item.name)} · ${item.default_race_points} P${
+              item.active ? "" : " (inaktiv)"
+            }</option>`,
         )
         .join("");
     }
 
-    _areaOptions() {
+    _areaOptions(selectedId = null) {
       return this._data.areas
         .map(
           (item) =>
-            `<option value="${escapeHtml(item.area_id)}">${escapeHtml(item.name)}</option>`,
+            `<option value="${escapeHtml(item.area_id)}" ${
+              item.area_id === selectedId ? "selected" : ""
+            }>${escapeHtml(item.name)}</option>`,
+        )
+        .join("");
+    }
+
+    _iconOptions(selectedIcon = "mdi:check") {
+      const options = [
+        ["mdi:check", "Allgemein"],
+        ["mdi:dishwasher", "Geschirrspüler"],
+        ["mdi:broom", "Kehren / Putzen"],
+        ["mdi:vacuum", "Staubsaugen"],
+        ["mdi:washing-machine", "Wäsche"],
+        ["mdi:trash-can-outline", "Müll"],
+        ["mdi:trash-can", "Bio-Müll"],
+        ["mdi:delete", "Restmüll"],
+        ["mdi:file-document", "Papier"],
+        ["mdi:bottle-soda", "Plastik"],
+        ["mdi:package-variant", "Aufräumen"],
+        ["mdi:feather", "Abstauben"],
+        ["mdi:shower", "Bad reinigen"],
+        ["mdi:toilet", "Bad / WC"],
+        ["mdi:bed", "Bett / Schlafzimmer"],
+        ["mdi:food-apple-outline", "Küche / Essen"],
+        ["mdi:flower", "Garten"],
+        ["mdi:dog", "Haustier"],
+        ["mdi:toy-brick-outline", "Spielzeug"],
+      ];
+      if (selectedIcon && !options.some(([value]) => value === selectedIcon)) {
+        options.unshift([selectedIcon, "Aktuelles Symbol"]);
+      }
+      return options
+        .map(
+          ([value, label]) =>
+            `<option value="${value}" ${
+              value === selectedIcon ? "selected" : ""
+            }>${label}</option>`,
         )
         .join("");
     }
@@ -483,6 +586,15 @@
                     required value="${item.default_race_points}"></label>
                   <label>Schwierigkeit<select name="difficulty">${difficultyOptions}</select></label>
                 </div>
+                <label>Symbol<div class="icon-field">
+                  <span class="icon-preview"><ha-icon
+                    icon="${escapeHtml(item.icon || "mdi:check")}"></ha-icon></span>
+                  <select name="icon">${this._iconOptions(item.icon || "mdi:check")}</select>
+                </div></label>
+                <fieldset class="image-picker compact-picker">
+                  <legend>Aufgabenbild</legend>
+                  <div>${this._taskImagePicker(item.image, true)}</div>
+                </fieldset>
                 <label class="check"><input name="adult_only" type="checkbox"
                   ${item.adult_only ? "checked" : ""}> Nur Erwachsene</label>
                 <label class="check"><input name="confirmation_required" type="checkbox"
@@ -491,7 +603,8 @@
                   ${
                     item.active
                       ? `<button type="button" class="secondary" data-disable-chore="${escapeHtml(item.id)}">Deaktivieren</button>`
-                      : ""
+                      : `<button type="button" class="secondary" data-enable-chore="${escapeHtml(item.id)}">Aktivieren</button>
+                         <button type="button" class="danger" data-delete-chore="${escapeHtml(item.id)}">Endgültig löschen</button>`
                   }</div>
               </form>
             </details>
@@ -539,8 +652,7 @@
       );
       const tasks = [...this._data.tasks]
         .filter((task) => task.status === "open")
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .slice(0, 8);
+        .sort((a, b) => a.date.localeCompare(b.date));
 
       if (!tasks.length) {
         return '<p class="empty">Noch keine offenen Aufgaben eingeplant.</p>';
@@ -559,10 +671,46 @@
             .filter(Boolean)
             .map(escapeHtml)
             .join(" · ");
-          return `<li>
+          return `<li class="manageable">
             <span class="task-icon">${this._choreVisual(chore)}</span>
-            <span><strong>${escapeHtml(chore?.name || "Aufgabe")}</strong>
-              <small>${details}</small></span>
+            <details>
+              <summary><strong>${escapeHtml(chore?.name || "Aufgabe")}</strong>
+                <small>${details}${task.blocked ? " · Blockiert" : ""}</small>
+              </summary>
+              <form class="compact-form" data-edit-task="${escapeHtml(task.id)}">
+                <label>Aufgabentyp<select required name="chore_type_id">
+                  ${this._choreOptions(task.chore_type_id)}
+                </select></label>
+                <div class="row">
+                  <label>Datum<input required type="date" name="date"
+                    value="${escapeHtml(task.date)}"></label>
+                  <label>Punkte<input required type="number" min="0" max="1000"
+                    name="race_points" value="${task.race_points}"></label>
+                </div>
+                <div class="row">
+                  <label>Raum<select name="area_id">
+                    <option value="">Ohne Raum</option>
+                    ${this._areaOptions(task.area_id)}
+                  </select></label>
+                  <label>Bevorzugte Person<select name="preferred_participant_id">
+                    <option value="">Noch offen</option>
+                    ${this._participantOptions(task.preferred_participant_id)}
+                  </select></label>
+                </div>
+                <label class="check"><input name="blocked" type="checkbox"
+                  ${task.blocked ? "checked" : ""}> Aufgabe blockieren</label>
+                ${
+                  task.source === "recurring"
+                    ? '<p class="schedule-preview">Diese Änderung betrifft nur diese konkrete Aufgabe, nicht ihre Wiederholungsregel.</p>'
+                    : ""
+                }
+                <div class="actions">
+                  <button>Änderungen speichern</button>
+                  <button type="button" class="danger"
+                    data-delete-task="${escapeHtml(task.id)}">Aufgabe löschen</button>
+                </div>
+              </form>
+            </details>
           </li>`;
         })
         .join("");
@@ -575,18 +723,33 @@
       return `<ha-icon icon="${escapeHtml(chore?.icon || "mdi:check")}"></ha-icon>`;
     }
 
-    _taskImagePicker() {
-      return TASK_IMAGES.map(
-        ([id, label, file, fallback], index) => `
+    _taskImagePicker(selectedImage = undefined, allowNone = false) {
+      const effectiveImage =
+        selectedImage === undefined
+          ? `${TASK_IMAGE_BASE}/${TASK_IMAGES[0][2]}`
+          : selectedImage;
+      const noneOption = allowNone
+        ? `<label class="image-option">
+            <input type="radio" name="image" value=""
+              ${effectiveImage ? "" : "checked"}>
+            <ha-icon icon="mdi:format-list-bulleted"></ha-icon>
+            <span>Nur Symbol</span>
+          </label>`
+        : "";
+      return `${noneOption}${TASK_IMAGES.map(
+        ([id, label, file, fallback]) => {
+          const image = `${TASK_IMAGE_BASE}/${file}`;
+          return `
           <label class="image-option">
             <input type="radio" name="image"
-              value="${TASK_IMAGE_BASE}/${escapeHtml(file)}"
+              value="${escapeHtml(image)}"
               data-id="${escapeHtml(id)}" data-fallback="${escapeHtml(fallback)}"
-              ${index === 0 ? "checked" : ""}>
-            <img src="${TASK_IMAGE_BASE}/${escapeHtml(file)}" alt="">
+              ${image === effectiveImage ? "checked" : ""}>
+            <img src="${escapeHtml(image)}" alt="">
             <span>${escapeHtml(label)}</span>
-          </label>`,
-      ).join("");
+          </label>`;
+        },
+      ).join("")}`;
     }
 
     _render() {
@@ -768,8 +931,11 @@
           box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent); }
         .image-option input { position:absolute; opacity:0; pointer-events:none; }
         .image-option img { width:58px; height:58px; object-fit:contain; }
+        .image-option > ha-icon { width:44px; height:44px; }
         .image-option span { min-width:0; color:var(--muted); font-size:10px;
           text-align:center; overflow-wrap:anywhere; }
+        .compact-picker { margin-block:10px; }
+        .compact-picker .image-option img { width:44px; height:44px; }
         .loading,.notice,.error { margin:14px 0 0; padding:10px 12px; border-radius:10px;
           font-size:13px; }
         .loading { color:var(--primary-text-color);

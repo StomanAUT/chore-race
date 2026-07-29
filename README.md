@@ -52,7 +52,9 @@ context and remain supported.
 - `chore_race.update_participant`
 - `chore_race.create_chore_type`
 - `chore_race.update_chore_type`
+- `chore_race.delete_chore_type`
 - `chore_race.create_task`
+- `chore_race.update_task`
 - `chore_race.create_recurrence_rule`
 - `chore_race.complete_task`
 - `chore_race.undo_completion`
@@ -81,7 +83,11 @@ Admin-only planner commands:
 - `chore_race/create_participant`
 - `chore_race/update_participant`
 - `chore_race/create_chore_type`
+- `chore_race/update_chore_type`
+- `chore_race/delete_chore_type`
 - `chore_race/create_task`
+- `chore_race/update_task`
+- `chore_race/delete_task`
 - `chore_race/create_recurrence_rule`
 - `chore_race/update_settings`
 

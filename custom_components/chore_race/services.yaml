@@ -225,9 +225,37 @@ update_chore_type:
           min: 0
           max: 1000
           mode: box
+    icon:
+      selector:
+        icon:
+    image:
+      selector:
+        text:
+    difficulty:
+      selector:
+        select:
+          options:
+            - easy
+            - medium
+            - hard
+    adult_only:
+      selector:
+        boolean:
+    confirmation_required:
+      selector:
+        boolean:
     active:
       selector:
         boolean:
+
+delete_chore_type:
+  name: Delete chore type
+  description: Permanently delete a chore type that has no task or recurrence references.
+  fields:
+    chore_type_id:
+      required: true
+      selector:
+        text:
 
 create_task:
   name: Create task
@@ -266,6 +294,36 @@ create_task:
     source_entity_id:
       selector:
         entity:
+
+update_task:
+  name: Update task
+  description: Update an untouched open task outside a running race.
+  fields:
+    task_id:
+      required: true
+      selector:
+        text:
+    chore_type_id:
+      selector:
+        text:
+    date:
+      selector:
+        date:
+    area_id:
+      selector:
+        area:
+    race_points:
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    preferred_participant_id:
+      selector:
+        text:
+    blocked:
+      selector:
+        boolean:
 
 complete_task:
   name: Complete task

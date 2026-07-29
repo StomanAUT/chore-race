@@ -23,6 +23,7 @@ from .const import (
     SERVICE_CREATE_PARTICIPANT,
     SERVICE_CREATE_RECURRENCE_RULE,
     SERVICE_CREATE_TASK,
+    SERVICE_DELETE_CHORE_TYPE,
     SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_DELETE_TASK,
     SERVICE_START_RACE,
@@ -31,6 +32,7 @@ from .const import (
     SERVICE_UPDATE_CHORE_TYPE,
     SERVICE_UPDATE_PARTICIPANT,
     SERVICE_UPDATE_RECURRENCE_RULE,
+    SERVICE_UPDATE_TASK,
 )
 from .errors import ChoreRaceError
 from .manager import ChoreRaceManager
@@ -106,6 +108,9 @@ UPDATE_CHORE_TYPE_SCHEMA = vol.Schema(
         vol.Optional("confirmation_required"): cv.boolean,
     }
 )
+DELETE_CHORE_TYPE_SCHEMA = vol.Schema(
+    {vol.Required("chore_type_id"): _ID}
+)
 CREATE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("chore_type_id"): _ID,
@@ -132,6 +137,17 @@ CREATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
         ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+    }
+)
+UPDATE_TASK_SCHEMA = vol.Schema(
+    {
+        vol.Required("task_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("date"): cv.date,
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("race_points"): _POINTS,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("blocked"): cv.boolean,
     }
 )
 UPDATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
@@ -165,7 +181,9 @@ ADMIN_SERVICES = {
     SERVICE_UPDATE_PARTICIPANT,
     SERVICE_CREATE_CHORE_TYPE,
     SERVICE_UPDATE_CHORE_TYPE,
+    SERVICE_DELETE_CHORE_TYPE,
     SERVICE_CREATE_TASK,
+    SERVICE_UPDATE_TASK,
     SERVICE_CREATE_RECURRENCE_RULE,
     SERVICE_UPDATE_RECURRENCE_RULE,
     SERVICE_DELETE_RECURRENCE_RULE,
@@ -200,11 +218,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             elif call.service == SERVICE_UPDATE_CHORE_TYPE:
                 record_id = values.pop("chore_type_id")
                 result = await manager.async_update_chore_type(record_id, **values)
+            elif call.service == SERVICE_DELETE_CHORE_TYPE:
+                await manager.async_delete_chore_type(**values)
+                return {} if call.return_response else None
             elif call.service == SERVICE_CREATE_TASK:
                 task_date: date = values.pop("date")
                 result = await manager.async_create_task(
                     task_date=task_date, **values
                 )
+            elif call.service == SERVICE_UPDATE_TASK:
+                record_id = values.pop("task_id")
+                result = await manager.async_update_task(record_id, **values)
             elif call.service == SERVICE_CREATE_RECURRENCE_RULE:
                 start_date: date = values.pop("start_date")
                 result = await manager.async_create_recurrence_rule(
@@ -242,7 +266,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_UPDATE_PARTICIPANT: UPDATE_PARTICIPANT_SCHEMA,
         SERVICE_CREATE_CHORE_TYPE: CREATE_CHORE_TYPE_SCHEMA,
         SERVICE_UPDATE_CHORE_TYPE: UPDATE_CHORE_TYPE_SCHEMA,
+        SERVICE_DELETE_CHORE_TYPE: DELETE_CHORE_TYPE_SCHEMA,
         SERVICE_CREATE_TASK: CREATE_TASK_SCHEMA,
+        SERVICE_UPDATE_TASK: UPDATE_TASK_SCHEMA,
         SERVICE_CREATE_RECURRENCE_RULE: CREATE_RECURRENCE_RULE_SCHEMA,
         SERVICE_UPDATE_RECURRENCE_RULE: UPDATE_RECURRENCE_RULE_SCHEMA,
         SERVICE_DELETE_RECURRENCE_RULE: DELETE_RECURRENCE_RULE_SCHEMA,

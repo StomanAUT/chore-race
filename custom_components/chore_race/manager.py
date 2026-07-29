@@ -205,6 +205,28 @@ class ChoreRaceManager:
             await self._async_commit()
             return chore_type
 
+    async def async_delete_chore_type(self, chore_type_id: str) -> None:
+        """Delete an unused chore definition without orphaning planner data."""
+        async with self._mutation_lock:
+            if chore_type_id not in self._data.chore_types:
+                raise NotFoundError("Chore type not found")
+            if any(
+                task.chore_type_id == chore_type_id
+                for task in self._data.tasks.values()
+            ):
+                raise ConflictError(
+                    "Chore types referenced by tasks must be deactivated"
+                )
+            if any(
+                rule["chore_type_id"] == chore_type_id
+                for rule in self._data.recurrence_rules.values()
+            ):
+                raise ConflictError(
+                    "Chore types referenced by recurrence rules must be deactivated"
+                )
+            del self._data.chore_types[chore_type_id]
+            await self._async_commit()
+
     async def async_update_settings(self, **changes: Any) -> Settings:
         """Update persisted planner and future race settings."""
         allowed = {
@@ -463,15 +485,53 @@ class ChoreRaceManager:
             created += 1
         return created
 
-    async def async_delete_task(self, task_id: str) -> None:
-        """Delete an uncompleted task."""
+    async def async_update_task(
+        self, task_id: str, **changes: Any
+    ) -> ChoreTask:
+        """Update an untouched open task while preserving historical records."""
+        allowed = {
+            "chore_type_id",
+            "date",
+            "area_id",
+            "race_points",
+            "preferred_participant_id",
+            "blocked",
+        }
+        if unknown := set(changes) - allowed:
+            raise ValidationError(f"Unknown task fields: {sorted(unknown)}")
         async with self._mutation_lock:
             task = self._require_task(task_id)
-            if any(
-                completion.task_id == task_id
-                for completion in self._data.completions.values()
+            self._ensure_task_mutable(task)
+            if (
+                "chore_type_id" in changes
+                and changes["chore_type_id"] not in self._data.chore_types
             ):
-                raise ConflictError("Tasks with completion history cannot be deleted")
+                raise NotFoundError("Chore type not found")
+            if "date" in changes and not isinstance(changes["date"], date):
+                raise ValidationError("date must be a date")
+            if changes.get("area_id") is not None:
+                registry = ar.async_get(self.hass)
+                if registry.async_get_area(changes["area_id"]) is None:
+                    raise ValidationError("Home Assistant area does not exist")
+            if changes.get("preferred_participant_id") is not None:
+                self._require_participant(changes["preferred_participant_id"])
+            if "race_points" in changes:
+                changes["race_points"] = self._validate_points(
+                    changes["race_points"], "race_points"
+                )
+            if "blocked" in changes and not isinstance(changes["blocked"], bool):
+                raise ValidationError("blocked must be a boolean")
+            for key, value in changes.items():
+                setattr(task, key, value)
+            task.updated_at = dt_util.utcnow()
+            await self._async_commit()
+            return task
+
+    async def async_delete_task(self, task_id: str) -> None:
+        """Delete an untouched open task."""
+        async with self._mutation_lock:
+            task = self._require_task(task_id)
+            self._ensure_task_mutable(task)
             del self._data.tasks[task.id]
             await self._async_commit()
 
@@ -662,6 +722,18 @@ class ChoreRaceManager:
         if task is None:
             raise NotFoundError("Task not found")
         return task
+
+    def _ensure_task_mutable(self, task: ChoreTask) -> None:
+        """Reject edits that could rewrite completion or live-race history."""
+        if task.status is not TaskStatus.OPEN:
+            raise ConflictError("Only open tasks can be changed")
+        if any(
+            completion.task_id == task.id
+            for completion in self._data.completions.values()
+        ):
+            raise ConflictError("Tasks with completion history cannot be changed")
+        if task.date == self.today() and self._active_race() is not None:
+            raise ConflictError("Today's tasks cannot be changed during a race")
 
     def _active_completion_for_task(self, task_id: str) -> Completion | None:
         return next(

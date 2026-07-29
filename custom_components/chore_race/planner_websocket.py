@@ -241,6 +241,76 @@ async def websocket_create_chore_type(
 @websocket_api.async_response
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "chore_race/update_chore_type",
+        vol.Required("chore_type_id"): _ID,
+        vol.Optional("name"): _NAME,
+        vol.Optional("default_race_points"): _POINTS,
+        vol.Optional("icon"): _OPTIONAL_TEXT,
+        vol.Optional("image"): _OPTIONAL_TEXT,
+        vol.Optional("streak_enabled"): bool,
+        vol.Optional("streak_max_bonus"): _POINTS,
+        vol.Optional("default_copilot_points"): _POINTS,
+        vol.Optional("active"): bool,
+        vol.Optional("difficulty"): vol.Any(
+            None, vol.In([item.value for item in Difficulty])
+        ),
+        vol.Optional("adult_only"): bool,
+        vol.Optional("confirmation_required"): bool,
+    }
+)
+async def websocket_update_chore_type(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update a chore type from an admin planner."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value
+        for key, value in msg.items()
+        if key not in {"id", "type", "chore_type_id"}
+    }
+    try:
+        chore_type = await manager.async_update_chore_type(
+            msg["chore_type_id"], **changes
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], chore_type.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_chore_type",
+        vol.Required("chore_type_id"): _ID,
+    }
+)
+async def websocket_delete_chore_type(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete an unused chore type."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_chore_type(msg["chore_type_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "chore_race/create_task",
         vol.Required("chore_type_id"): _ID,
         vol.Required("date"): vol.Coerce(date.fromisoformat),
@@ -278,6 +348,67 @@ async def websocket_create_task(
         _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], task.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/update_task",
+        vol.Required("task_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("date"): vol.Coerce(date.fromisoformat),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("race_points"): _POINTS,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("blocked"): bool,
+    }
+)
+async def websocket_update_task(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update an untouched open task."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value
+        for key, value in msg.items()
+        if key not in {"id", "type", "task_id"}
+    }
+    try:
+        task = await manager.async_update_task(msg["task_id"], **changes)
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], task.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_task",
+        vol.Required("task_id"): _ID,
+    }
+)
+async def websocket_delete_task(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete an untouched open task."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_task(msg["task_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
 
 
 @websocket_api.require_admin
@@ -434,7 +565,11 @@ def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
         websocket_create_participant,
         websocket_update_participant,
         websocket_create_chore_type,
+        websocket_update_chore_type,
+        websocket_delete_chore_type,
         websocket_create_task,
+        websocket_update_task,
+        websocket_delete_task,
         websocket_update_settings,
         websocket_update_recurrence_rule,
         websocket_delete_recurrence_rule,

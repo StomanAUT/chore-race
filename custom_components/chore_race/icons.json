@@ -4,7 +4,9 @@
     "update_participant": {"service": "mdi:account-edit"},
     "create_chore_type": {"service": "mdi:shape-plus"},
     "update_chore_type": {"service": "mdi:shape"},
+    "delete_chore_type": {"service": "mdi:shape-minus"},
     "create_task": {"service": "mdi:clipboard-plus"},
+    "update_task": {"service": "mdi:clipboard-edit"},
     "complete_task": {"service": "mdi:check-bold"},
     "undo_completion": {"service": "mdi:undo"},
     "delete_task": {"service": "mdi:delete"}

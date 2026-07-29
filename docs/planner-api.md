@@ -56,6 +56,27 @@ Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 }
 ```
 
+### Update an open task
+
+```json
+{
+  "type": "chore_race/update_task",
+  "task_id": "stable-task-id",
+  "date": "2026-07-30",
+  "area_id": "wohnzimmer",
+  "preferred_participant_id": "stable-participant-id",
+  "race_points": 4
+}
+```
+
+Only untouched open tasks can be updated or deleted. Tasks with completion
+history remain immutable, including after an undo. Tasks scheduled for today
+are also locked while a race is running.
+
+Chore types can be updated through `chore_race/update_chore_type`. Permanent
+deletion through `chore_race/delete_chore_type` is allowed only when no task or
+recurrence rule references the type; otherwise it must be deactivated.
+
 ### Update settings
 
 ```json

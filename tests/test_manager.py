@@ -1,7 +1,7 @@
 """Business-rule tests for Chore Race Core."""
 
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -47,6 +47,62 @@ async def test_task_snapshots_race_points(manager):
         chore_type.id, default_race_points=10
     )
     assert task.race_points == 5
+
+
+async def test_open_task_can_be_edited_and_deleted(manager):
+    participant, _, task = await _base_records(manager)
+    replacement = await manager.async_create_chore_type("Bad reinigen", 8)
+    new_date = manager.today() + timedelta(days=1)
+
+    updated = await manager.async_update_task(
+        task.id,
+        chore_type_id=replacement.id,
+        date=new_date,
+        race_points=7,
+        preferred_participant_id=participant.id,
+        blocked=True,
+    )
+
+    assert updated.chore_type_id == replacement.id
+    assert updated.date == new_date
+    assert updated.race_points == 7
+    assert updated.blocked is True
+
+    await manager.async_delete_task(task.id)
+    assert task.id not in manager.data.tasks
+
+
+async def test_task_with_completion_history_cannot_be_changed(manager):
+    participant, _, task = await _base_records(manager)
+    completion = await manager.async_complete_task(task.id, participant.id)
+    await manager.async_undo_completion(completion.id)
+
+    with pytest.raises(ConflictError):
+        await manager.async_update_task(task.id, race_points=9)
+    with pytest.raises(ConflictError):
+        await manager.async_delete_task(task.id)
+
+
+async def test_today_task_is_locked_during_running_race(manager):
+    _, _, task = await _base_records(manager)
+    await manager.async_start_race()
+
+    with pytest.raises(ConflictError):
+        await manager.async_update_task(task.id, race_points=9)
+    with pytest.raises(ConflictError):
+        await manager.async_delete_task(task.id)
+
+
+async def test_only_unused_chore_types_can_be_deleted(manager):
+    await manager.async_load()
+    unused = await manager.async_create_chore_type("Fenster", 5)
+    await manager.async_delete_chore_type(unused.id)
+    assert unused.id not in manager.data.chore_types
+
+    used = await manager.async_create_chore_type("Boden", 4)
+    await manager.async_create_task(used.id, manager.today())
+    with pytest.raises(ConflictError):
+        await manager.async_delete_chore_type(used.id)
 
 
 async def test_normal_completion_and_undo(manager):
