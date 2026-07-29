@@ -3,6 +3,7 @@
   "name": "Chore Race",
   "codeowners": ["@StomanAUT"],
   "config_flow": true,
+  "dependencies": ["http"],
   "documentation": "https://github.com/StomanAUT/chore-race",
   "integration_type": "service",
   "iot_class": "local_push",
