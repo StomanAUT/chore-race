@@ -43,7 +43,7 @@ type ChoreRaceConfigEntry = ConfigEntry[ChoreRaceManager]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 ASSET_URL = "/chore-race-assets"
-ASSET_PATH = Path(__file__).parent / "www"
+ASSET_PATH = Path(__file__).parent / "task_icons"
 
 _ID = vol.All(str, vol.Length(min=1, max=64))
 _NAME = vol.All(str, vol.Strip, vol.Length(min=1, max=100))

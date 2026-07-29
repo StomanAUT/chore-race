@@ -13,7 +13,7 @@
     error?.code ??
     "Die Änderung konnte nicht gespeichert werden.";
 
-  const TASK_IMAGE_BASE = "/chore-race-assets/icons/tasks";
+  const TASK_IMAGE_BASE = "/chore-race-assets";
   const TASK_IMAGES = [
     ["tidy-up", "Aufräumen", "tidy-up.png", "mdi:package-variant"],
     ["mop-floor", "Boden wischen", "mop-floor.png", "mdi:broom"],
