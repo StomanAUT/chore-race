@@ -13,6 +13,20 @@
     error?.code ??
     "Die Änderung konnte nicht gespeichert werden.";
 
+  const TASK_IMAGE_BASE = "/chore-race-assets/icons/tasks";
+  const TASK_IMAGES = [
+    ["tidy-up", "Aufräumen", "tidy-up.png", "mdi:package-variant"],
+    ["mop-floor", "Boden wischen", "mop-floor.png", "mdi:broom"],
+    ["dust", "Abstauben", "dust.png", "mdi:feather"],
+    ["organic-waste", "Bio-Müll", "organic-waste.png", "mdi:trash-can"],
+    ["general-waste", "Restmüll", "general-waste.png", "mdi:delete"],
+    ["paper", "Papier", "paper.png", "mdi:file-document"],
+    ["plastic", "Plastik", "plastic.png", "mdi:bottle-soda"],
+    ["clean-bathroom", "Bad reinigen", "clean-bathroom.png", "mdi:shower"],
+    ["clean-toilet", "WC reinigen", "clean-toilet.png", "mdi:toilet"],
+    ["laundry", "Wäsche", "laundry.png", "mdi:washing-machine"],
+  ];
+
   const today = () => {
     const date = new Date();
     date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
@@ -240,6 +254,7 @@
               name: values.get("name").trim(),
               default_race_points: Number(values.get("points")),
               icon: values.get("icon").trim() || null,
+              image: values.get("image") || null,
               difficulty: values.get("difficulty") || null,
             },
             "Aufgabentyp wurde angelegt.",
@@ -253,6 +268,17 @@
             .querySelector(".icon-preview ha-icon")
             ?.setAttribute("icon", event.currentTarget.value);
         });
+      this.shadowRoot.querySelectorAll('[name="image"]').forEach((input) => {
+        input.addEventListener("change", (event) => {
+          if (!event.currentTarget.checked) return;
+          const iconSelect = this.shadowRoot.querySelector('[name="icon"]');
+          const fallback = event.currentTarget.dataset.fallback;
+          if (iconSelect && fallback) {
+            iconSelect.value = fallback;
+            iconSelect.dispatchEvent(new Event("change"));
+          }
+        });
+      });
 
       const schedule = this.shadowRoot.querySelector('[name="schedule"]');
       const updateScheduleFields = () => {
@@ -442,7 +468,7 @@
             )
             .join("");
           return `<li class="manageable ${item.active ? "" : "inactive"}">
-            <span class="task-icon"><ha-icon icon="${escapeHtml(item.icon || "mdi:check")}"></ha-icon></span>
+            <span class="task-icon">${this._choreVisual(item)}</span>
             <details>
               <summary><strong>${escapeHtml(item.name)}</strong>
                 <small>${item.default_race_points} Punkte · ${item.active ? "Aktiv" : "Inaktiv"}${
@@ -534,12 +560,33 @@
             .map(escapeHtml)
             .join(" · ");
           return `<li>
-            <span class="task-icon"><ha-icon icon="${escapeHtml(chore?.icon || "mdi:check")}"></ha-icon></span>
+            <span class="task-icon">${this._choreVisual(chore)}</span>
             <span><strong>${escapeHtml(chore?.name || "Aufgabe")}</strong>
               <small>${details}</small></span>
           </li>`;
         })
         .join("");
+    }
+
+    _choreVisual(chore) {
+      if (chore?.image) {
+        return `<img src="${escapeHtml(chore.image)}" alt="">`;
+      }
+      return `<ha-icon icon="${escapeHtml(chore?.icon || "mdi:check")}"></ha-icon>`;
+    }
+
+    _taskImagePicker() {
+      return TASK_IMAGES.map(
+        ([id, label, file, fallback], index) => `
+          <label class="image-option">
+            <input type="radio" name="image"
+              value="${TASK_IMAGE_BASE}/${escapeHtml(file)}"
+              data-id="${escapeHtml(id)}" data-fallback="${escapeHtml(fallback)}"
+              ${index === 0 ? "checked" : ""}>
+            <img src="${TASK_IMAGE_BASE}/${escapeHtml(file)}" alt="">
+            <span>${escapeHtml(label)}</span>
+          </label>`,
+      ).join("");
     }
 
     _render() {
@@ -598,6 +645,13 @@
                   <option value="mdi:vacuum">Staubsaugen</option>
                   <option value="mdi:washing-machine">Wäsche</option>
                   <option value="mdi:trash-can-outline">Müll</option>
+                  <option value="mdi:package-variant">Aufräumen</option>
+                  <option value="mdi:feather">Abstauben</option>
+                  <option value="mdi:trash-can">Bio-Müll</option>
+                  <option value="mdi:delete">Restmüll</option>
+                  <option value="mdi:file-document">Papier</option>
+                  <option value="mdi:bottle-soda">Plastik</option>
+                  <option value="mdi:shower">Bad reinigen</option>
                   <option value="mdi:bed">Bett / Schlafzimmer</option>
                   <option value="mdi:food-apple-outline">Küche / Essen</option>
                   <option value="mdi:flower">Garten</option>
@@ -606,6 +660,10 @@
                   <option value="mdi:toy-brick-outline">Spielzeug</option>
                 </select>
               </div></label>
+              <fieldset class="image-picker">
+                <legend>Aufgabenbild auswählen</legend>
+                <div>${this._taskImagePicker()}</div>
+              </fieldset>
               <button ${disabled}>Aufgabentyp anlegen</button>
             </form>
             <section class="types"><h3>Vorhandene Aufgabentypen</h3>
@@ -697,6 +755,21 @@
         .icon-preview { display:grid; place-items:center; color:var(--ink);
           background:var(--surface); border:1px solid var(--line); border-radius:10px; }
         .icon-preview ha-icon,.task-icon ha-icon { width:20px; height:20px; }
+        .task-icon img { width:30px; height:30px; object-fit:contain; }
+        .image-picker { margin:0; padding:0; border:0; }
+        .image-picker legend { margin-bottom:8px; color:var(--muted);
+          font-size:12px; font-weight:600; }
+        .image-picker > div { display:grid;
+          grid-template-columns:repeat(auto-fit,minmax(92px,1fr)); gap:8px; }
+        .image-option { position:relative; display:grid; justify-items:center; gap:5px;
+          min-width:0; padding:8px 6px; border:1px solid var(--line);
+          border-radius:12px; background:var(--surface); cursor:pointer; }
+        .image-option:has(input:checked) { border-color:var(--accent);
+          box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent); }
+        .image-option input { position:absolute; opacity:0; pointer-events:none; }
+        .image-option img { width:58px; height:58px; object-fit:contain; }
+        .image-option span { min-width:0; color:var(--muted); font-size:10px;
+          text-align:center; overflow-wrap:anywhere; }
         .loading,.notice,.error { margin:14px 0 0; padding:10px 12px; border-radius:10px;
           font-size:13px; }
         .loading { color:var(--primary-text-color);

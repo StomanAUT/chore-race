@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, Unauthorized
@@ -40,6 +42,8 @@ from .websocket import async_register_websocket_commands
 type ChoreRaceConfigEntry = ConfigEntry[ChoreRaceManager]
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+ASSET_URL = "/chore-race-assets"
+ASSET_PATH = Path(__file__).parent / "www"
 
 _ID = vol.All(str, vol.Length(min=1, max=64))
 _NAME = vol.All(str, vol.Strip, vol.Length(min=1, max=100))
@@ -174,6 +178,9 @@ ADMIN_SERVICES = {
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register actions and WebSocket commands independent of entry load."""
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(ASSET_URL, str(ASSET_PATH), cache_headers=True)]
+    )
     async_register_websocket_commands(hass)
     async_register_planner_websocket_commands(hass)
 
