@@ -2,9 +2,11 @@
 
 import asyncio
 from datetime import date, timedelta
+from types import SimpleNamespace
 
 import pytest
 
+from custom_components.chore_race import manager as manager_module
 from custom_components.chore_race.errors import ConflictError, ValidationError
 from custom_components.chore_race.models import ScoringMode, TaskStatus
 
@@ -70,6 +72,103 @@ async def test_open_task_can_be_edited_and_deleted(manager):
 
     await manager.async_delete_task(task.id)
     assert task.id not in manager.data.tasks
+
+
+async def test_task_can_target_home_assistant_floor(manager, monkeypatch):
+    """A task may cover one HA floor instead of one individual area."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Boden wischen", 5)
+    registry = SimpleNamespace(
+        async_get_floor=lambda floor_id: (
+            SimpleNamespace(floor_id=floor_id, name="Erdgeschoss")
+            if floor_id == "erdgeschoss"
+            else None
+        )
+    )
+    monkeypatch.setattr(
+        manager_module.fr, "async_get", lambda hass: registry
+    )
+
+    task = await manager.async_create_task(
+        chore_type.id,
+        manager.today(),
+        floor_id="erdgeschoss",
+    )
+
+    assert task.floor_id == "erdgeschoss"
+    assert task.area_id is None
+    assert task.to_dict()["floor_id"] == "erdgeschoss"
+
+
+async def test_task_rejects_area_and_floor_combination(manager):
+    """Room and floor scopes are alternatives, never cumulative filters."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Boden wischen", 5)
+
+    with pytest.raises(ValidationError, match="either an area or a floor"):
+        await manager.async_create_task(
+            chore_type.id,
+            manager.today(),
+            area_id="wohnzimmer",
+            floor_id="erdgeschoss",
+        )
+
+
+async def test_task_can_switch_from_area_to_floor(manager, monkeypatch):
+    """An untouched task can replace its room assignment with a floor."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Boden wischen", 5)
+    area_registry = SimpleNamespace(
+        async_get_area=lambda area_id: (
+            SimpleNamespace(id=area_id, name="Wohnzimmer")
+            if area_id == "wohnzimmer"
+            else None
+        )
+    )
+    floor_registry = SimpleNamespace(
+        async_get_floor=lambda floor_id: (
+            SimpleNamespace(floor_id=floor_id, name="Erdgeschoss")
+            if floor_id == "erdgeschoss"
+            else None
+        )
+    )
+    monkeypatch.setattr(
+        manager_module.ar, "async_get", lambda hass: area_registry
+    )
+    monkeypatch.setattr(
+        manager_module.fr, "async_get", lambda hass: floor_registry
+    )
+    task = await manager.async_create_task(
+        chore_type.id,
+        manager.today(),
+        area_id="wohnzimmer",
+    )
+
+    updated = await manager.async_update_task(
+        task.id,
+        area_id=None,
+        floor_id="erdgeschoss",
+    )
+
+    assert updated.area_id is None
+    assert updated.floor_id == "erdgeschoss"
+
+
+async def test_unknown_home_assistant_floor_is_rejected(manager, monkeypatch):
+    """Stored floor IDs must resolve through Home Assistant's registry."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Boden wischen", 5)
+    registry = SimpleNamespace(async_get_floor=lambda floor_id: None)
+    monkeypatch.setattr(
+        manager_module.fr, "async_get", lambda hass: registry
+    )
+
+    with pytest.raises(ValidationError, match="floor"):
+        await manager.async_create_task(
+            chore_type.id,
+            manager.today(),
+            floor_id="gibt-es-nicht",
+        )
 
 
 async def test_task_with_completion_history_cannot_be_changed(manager):
@@ -201,6 +300,42 @@ async def test_recurring_tasks_materialize_once_per_due_date(manager):
     ]
     assert len(tasks) == 1
     assert tasks[0].date == date(2027, 7, 3)
+
+
+async def test_recurring_floor_assignment_is_materialized(manager, monkeypatch):
+    """Generated tasks retain the floor scope of their recurrence rule."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Boden wischen", 5)
+    registry = SimpleNamespace(
+        async_get_floor=lambda floor_id: (
+            SimpleNamespace(floor_id=floor_id, name="Obergeschoss")
+            if floor_id == "obergeschoss"
+            else None
+        )
+    )
+    monkeypatch.setattr(
+        manager_module.fr, "async_get", lambda hass: registry
+    )
+    start = manager.today() + timedelta(days=1)
+
+    rule = await manager.async_create_recurrence_rule(
+        chore_type.id,
+        start,
+        frequency="days",
+        floor_id="obergeschoss",
+    )
+    assert rule["floor_id"] == "obergeschoss"
+    assert rule["area_id"] is None
+
+    assert await manager.async_materialize_recurrences(start) == 1
+    generated = [
+        task
+        for task in manager.data.tasks.values()
+        if task.source_entity_id == f"recurrence:{rule['id']}"
+    ]
+    assert len(generated) == 1
+    assert generated[0].floor_id == "obergeschoss"
+    assert generated[0].area_id is None
 
 
 async def test_monthly_rule_uses_last_day_for_short_month(manager):

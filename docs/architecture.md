@@ -52,6 +52,21 @@ are closed persistently when the next session starts.
 The compact card state uses scheduled-task counts for plan progress and keeps
 completion-timestamp counts as a separate manager API.
 
+## Task location scope
+
+A concrete task and a recurrence rule can optionally reference one Home
+Assistant Area Registry entry (`area_id`) or one Floor Registry entry
+(`floor_id`). These fields are mutually exclusive:
+
+- an area scopes work to a single room;
+- a floor scopes work across all rooms on that floor;
+- neither field means the task has no location scope.
+
+Registry IDs remain the stable stored identity; names and icons are resolved
+for presentation. Existing records without `floor_id` continue to load with
+the default value `null`. Materialized recurring tasks snapshot the rule's
+location scope so later rule edits do not rewrite existing work or history.
+
 ## Chore artwork
 
 `ChoreType.image` is the primary visual used by the planner and race card.

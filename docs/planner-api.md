@@ -14,7 +14,8 @@ Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 | `chore_race/get_participants` | Stable participant records |
 | `chore_race/get_chore_types` | Reusable chore definitions |
 | `chore_race/get_tasks` | Concrete task snapshots |
-| `chore_race/get_areas` | Current HA Area Registry records |
+| `chore_race/get_areas` | Current HA Area and Floor Registry records (`kind`) |
+| `chore_race/get_floors` | Current HA Floor Registry records |
 | `chore_race/get_settings` | Planner and race-ready settings |
 | `chore_race/get_state` | Compact team/today state |
 | `chore_race/get_leaderboard` | Current-week totals |
@@ -75,12 +76,16 @@ Race lifecycle mutations are admin-only:
 
 ### Create a dated task
 
+Tasks may target either one Home Assistant area (`area_id`) or one Home
+Assistant floor (`floor_id`). The fields are mutually exclusive. Omit both for
+a household-wide task.
+
 ```json
 {
   "type": "chore_race/create_task",
   "chore_type_id": "stable-type-id",
   "date": "2026-07-28",
-  "area_id": "kinderzimmer_arthur",
+  "floor_id": "erdgeschoss",
   "preferred_participant_id": "stable-participant-id"
 }
 ```
@@ -93,10 +98,15 @@ Race lifecycle mutations are admin-only:
   "task_id": "stable-task-id",
   "date": "2026-07-30",
   "area_id": "wohnzimmer",
+  "floor_id": null,
   "preferred_participant_id": "stable-participant-id",
   "race_points": 4
 }
 ```
+
+When changing the scope, clear the previous field explicitly: for example,
+send `area_id: null` together with a new `floor_id`. The manager validates IDs
+against Home Assistant's registries and rejects requests containing both.
 
 Only untouched open tasks can be updated or deleted. Tasks with completion
 history remain immutable, including after an undo. Untouched open tasks remain
@@ -106,6 +116,11 @@ immediately.
 Chore types can be updated through `chore_race/update_chore_type`. Permanent
 deletion through `chore_race/delete_chore_type` is allowed only when no task or
 recurrence rule references the type; otherwise it must be deactivated.
+
+Recurring rules accept the same mutually exclusive `area_id` and `floor_id`
+fields. Every materialized task snapshots that assignment, so a rule such as
+“Boden wischen · Erdgeschoss · 5 Punkte” produces one floor-wide task per due
+date rather than one task for every room.
 
 ### Update settings
 

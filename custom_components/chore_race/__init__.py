@@ -116,6 +116,7 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Required("chore_type_id"): _ID,
         vol.Required("date"): cv.date,
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("race_points"): _POINTS,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("source", default=TaskSource.MANUAL.value): vol.In(
@@ -136,6 +137,7 @@ CREATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
             vol.Coerce(int), vol.Range(min=1, max=365)
         ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
     }
 )
@@ -145,6 +147,7 @@ UPDATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("chore_type_id"): _ID,
         vol.Optional("date"): cv.date,
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("race_points"): _POINTS,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("blocked"): cv.boolean,
@@ -160,6 +163,7 @@ UPDATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
             vol.Coerce(int), vol.Range(min=1, max=365)
         ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("active"): cv.boolean,
     }

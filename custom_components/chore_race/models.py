@@ -116,6 +116,7 @@ class ChoreTask:
     created_at: datetime
     updated_at: datetime
     area_id: str | None = None
+    floor_id: str | None = None
     preferred_participant_id: str | None = None
     status: TaskStatus = TaskStatus.OPEN
     source: TaskSource = TaskSource.MANUAL

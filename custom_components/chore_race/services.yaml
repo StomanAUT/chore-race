@@ -60,6 +60,10 @@ create_recurrence_rule:
     area_id:
       selector:
         area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
     preferred_participant_id:
       selector:
         text:
@@ -94,6 +98,10 @@ update_recurrence_rule:
     area_id:
       selector:
         area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
     preferred_participant_id:
       selector:
         text:
@@ -272,6 +280,10 @@ create_task:
     area_id:
       selector:
         area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
     race_points:
       selector:
         number:
@@ -312,6 +324,10 @@ update_task:
     area_id:
       selector:
         area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
     race_points:
       selector:
         number:

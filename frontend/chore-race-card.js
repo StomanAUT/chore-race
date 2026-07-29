@@ -131,6 +131,7 @@
       this._motionQuery = undefined;
       this._participants = [];
       this._areas = {};
+      this._floors = {};
       this._selectedTaskId = undefined;
       this._selectedParticipantId = undefined;
       this._selectedCopilotId = undefined;
@@ -229,7 +230,7 @@
         if (raceState) {
           this._raceApiError = undefined;
           this._raceReceivedAt = Date.now();
-          const [participants, state, areas] = await Promise.all([
+          const [participants, state, places] = await Promise.all([
             this._hass.callWS({ type: "chore_race/get_participants" }),
             this._hass.callWS({ type: "chore_race/get_state" }),
             this._hass.callWS({ type: "chore_race/get_areas" }),
@@ -240,7 +241,14 @@
           );
           this._participants = participants.filter((participant) => participant.active);
           this._areas = Object.fromEntries(
-            areas.map((area) => [area.area_id, area.name]),
+            places
+              .filter((place) => place.kind !== "floor")
+              .map((area) => [area.area_id, area.name]),
+          );
+          this._floors = Object.fromEntries(
+            places
+              .filter((place) => place.kind === "floor")
+              .map((floor) => [floor.floor_id, floor.name]),
           );
           this._data = {
             raceState,
@@ -579,7 +587,9 @@
                       <small>NÄCHSTE AUFGABE</small>
                       <h3>${escapeHtml(task.name ?? "Aufgabe")}</h3>
                       <span>${Number(task.race_points) || 0} Punkte${
-                        task.area_id && this._areas[task.area_id]
+                        task.floor_id && this._floors[task.floor_id]
+                          ? ` · ${escapeHtml(this._floors[task.floor_id])}`
+                          : task.area_id && this._areas[task.area_id]
                           ? ` · ${escapeHtml(this._areas[task.area_id])}`
                           : ""
                       }</span>

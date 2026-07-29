@@ -104,6 +104,7 @@
         choreTypes: [],
         tasks: [],
         areas: [],
+        floors: [],
         recurrenceRules: [],
       };
     }
@@ -141,11 +142,11 @@
       this._loading = true;
       this._render();
       try {
-        const [participants, choreTypes, tasks, areas] = await Promise.all([
+        const [participants, choreTypes, tasks, places] = await Promise.all([
           this._hass.callWS({ type: "chore_race/get_participants" }),
           this._hass.callWS({ type: "chore_race/get_chore_types" }),
           this._hass.callWS({ type: "chore_race/get_tasks" }),
-          this._hass.callWS({ type: "config/area_registry/list" }),
+          this._hass.callWS({ type: "chore_race/get_areas" }),
         ]);
         let recurrenceRules = [];
         try {
@@ -160,7 +161,10 @@
           choreTypes,
           tasks,
           recurrenceRules,
-          areas: [...areas].sort((a, b) =>
+          areas: places.filter((item) => item.kind !== "floor").sort((a, b) =>
+            String(a.name).localeCompare(String(b.name), "de"),
+          ),
+          floors: places.filter((item) => item.kind === "floor").sort((a, b) =>
             String(a.name).localeCompare(String(b.name), "de"),
           ),
         };
@@ -425,9 +429,10 @@
           event.preventDefault();
           const values = new FormData(event.currentTarget);
           const schedule = values.get("schedule");
+          const location = this._locationPayload(values.get("location_id"));
           const common = {
             chore_type_id: values.get("chore_type_id"),
-            area_id: values.get("area_id") || null,
+            ...location,
             preferred_participant_id:
               values.get("preferred_participant_id") || null,
           };
@@ -458,13 +463,14 @@
         form.addEventListener("submit", (event) => {
           event.preventDefault();
           const values = new FormData(event.currentTarget);
+          const location = this._locationPayload(values.get("location_id"));
           this._submit(
             "update_task",
             {
               task_id: event.currentTarget.dataset.editTask,
               chore_type_id: values.get("chore_type_id"),
               date: values.get("date"),
-              area_id: values.get("area_id") || null,
+              ...location,
               preferred_participant_id:
                 values.get("preferred_participant_id") || null,
               race_points: Number(values.get("race_points")),
@@ -530,15 +536,39 @@
         .join("");
     }
 
-    _areaOptions(selectedId = null) {
-      return this._data.areas
+    _locationPayload(value) {
+      const [kind, id] = String(value || "").split(":", 2);
+      return {
+        area_id: kind === "area" && id ? id : null,
+        floor_id: kind === "floor" && id ? id : null,
+      };
+    }
+
+    _locationOptions(areaId = null, floorId = null) {
+      const selected = floorId
+        ? `floor:${floorId}`
+        : areaId
+          ? `area:${areaId}`
+          : "";
+      const floors = this._data.floors
         .map(
           (item) =>
-            `<option value="${escapeHtml(item.area_id)}" ${
-              item.area_id === selectedId ? "selected" : ""
+            `<option value="floor:${escapeHtml(item.floor_id)}" ${
+              selected === `floor:${item.floor_id}` ? "selected" : ""
             }>${escapeHtml(item.name)}</option>`,
         )
         .join("");
+      const areas = this._data.areas
+        .map(
+          (item) =>
+            `<option value="area:${escapeHtml(item.area_id)}" ${
+              selected === `area:${item.area_id}` ? "selected" : ""
+            }>${escapeHtml(item.name)}</option>`,
+        )
+        .join("");
+      return `<option value="" ${selected ? "" : "selected"}>Ohne Ort</option>
+        ${floors ? `<optgroup label="Etagen">${floors}</optgroup>` : ""}
+        ${areas ? `<optgroup label="Räume">${areas}</optgroup>` : ""}`;
     }
 
     _iconOptions(selectedIcon = "mdi:check") {
@@ -656,6 +686,12 @@
       const choreById = Object.fromEntries(
         this._data.choreTypes.map((item) => [item.id, item]),
       );
+      const areaById = Object.fromEntries(
+        this._data.areas.map((item) => [item.area_id, item.name]),
+      );
+      const floorById = Object.fromEntries(
+        this._data.floors.map((item) => [item.floor_id, item.name]),
+      );
       if (!this._data.recurrenceRules.length) {
         return '<p class="empty">Noch keine verwaltbaren Wiederholungsregeln.</p>';
       }
@@ -665,17 +701,22 @@
         yearly: () => "Jährlich",
       };
       return `<ul>${this._data.recurrenceRules
-        .map((rule) => `<li class="${rule.active ? "" : "inactive"}">
+        .map((rule) => {
+          const location =
+            floorById[rule.floor_id] || areaById[rule.area_id] || "";
+          return `<li class="${rule.active ? "" : "inactive"}">
           <span class="task-icon"><ha-icon icon="mdi:calendar-sync"></ha-icon></span>
           <span><strong>${escapeHtml(choreById[rule.chore_type_id]?.name || "Aufgabe")}</strong>
             <small>${escapeHtml(frequency[rule.frequency]?.(rule) || rule.frequency)}
-              · ab ${escapeHtml(rule.start_date)} · ${rule.active ? "Aktiv" : "Pausiert"}</small></span>
+              · ab ${escapeHtml(rule.start_date)}${location ? ` · ${escapeHtml(location)}` : ""}
+              · ${rule.active ? "Aktiv" : "Pausiert"}</small></span>
           <span class="rule-actions">
             <button class="secondary" data-toggle-rule="${escapeHtml(rule.id)}"
               data-active="${rule.active}">${rule.active ? "Pausieren" : "Aktivieren"}</button>
             <button class="danger" data-delete-rule="${escapeHtml(rule.id)}">Entfernen</button>
           </span>
-        </li>`)
+        </li>`;
+        })
         .join("")}</ul>`;
     }
 
@@ -689,6 +730,9 @@
       const areaById = Object.fromEntries(
         this._data.areas.map((item) => [item.area_id, item]),
       );
+      const floorById = Object.fromEntries(
+        this._data.floors.map((item) => [item.floor_id, item]),
+      );
       const tasks = [...this._data.tasks]
         .filter((task) => task.status === "open")
         .sort((a, b) => a.date.localeCompare(b.date));
@@ -701,9 +745,10 @@
           const chore = choreById[task.chore_type_id];
           const participant = participantById[task.preferred_participant_id];
           const area = areaById[task.area_id];
+          const floor = floorById[task.floor_id];
           const details = [
             task.date,
-            area?.name,
+            floor?.name || area?.name,
             participant?.name,
             `${task.race_points} P`,
           ]
@@ -729,9 +774,8 @@
                     name="race_points" value="${task.race_points}"></label>
                 </div>
                 <div class="row">
-                  <label>Raum<select name="area_id">
-                    <option value="">Ohne Raum</option>
-                    ${this._areaOptions(task.area_id)}
+                  <label>Ort<select name="location_id">
+                    ${this._locationOptions(task.area_id, task.floor_id)}
                   </select></label>
                   <label>Bevorzugte Person<select name="preferred_participant_id">
                     <option value="">Noch offen</option>
@@ -902,8 +946,8 @@
               </select></label>
               <div class="row">
                 <label data-label="date">Datum<input required type="date" name="date" value="${today()}"></label>
-                <label>Raum<select name="area_id"><option value="">Ohne Raum</option>
-                  ${this._areaOptions()}</select></label>
+                <label>Ort<select name="location_id">
+                  ${this._locationOptions()}</select></label>
               </div>
               <label>Bevorzugte Person<select name="preferred_participant_id">
                 <option value="">Noch offen</option>${this._participantOptions()}

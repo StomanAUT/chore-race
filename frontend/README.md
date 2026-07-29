@@ -66,7 +66,9 @@ chore type, and then a dated or recurring task. Recurring schedules support
 every N days, monthly, and yearly patterns. Existing chore types and open tasks
 use compact, expandable edit panels. The image picker stays collapsed until it
 is needed and provides a curated visual selection without requiring Material
-Design Icon names.
+Design Icon names. A task can be assigned to either a Home Assistant room or a
+whole floor; selecting one clears the other. This supports one task such as
+“Boden wischen · Erdgeschoss · 5 Punkte” without duplicating it for every room.
 
 Both cards expose `max_width` and `accent_color` in Home Assistant's visual
 card editor. `max_width` accepts 280 to 1400 pixels; the cards also shrink to
@@ -93,11 +95,12 @@ admin-protected `chore_race/start_race` and `chore_race/stop_race` WebSocket
 commands.
 
 Task images are the primary visual. The configured Material Design icon is
-used only when a chore type has no image. Area IDs are resolved through Home
-Assistant's Area Registry. For adult-only chores, children without the explicit
-restricted-task permission remain visible in the picker but cannot be selected.
-Legacy `/chore-race-assets/` image paths are mapped to
-`/local/chore-race-icons/`, and task artwork is fitted without cropping.
+used only when a chore type has no image. Area and floor IDs are resolved
+through Home Assistant's registries and displayed by name. For adult-only
+chores, children without the explicit restricted-task permission remain
+visible in the picker but cannot be selected. Legacy `/chore-race-assets/`
+image paths are mapped to `/local/chore-race-icons/`, and task artwork is
+fitted without cropping.
 
 ## Prototype boundaries
 

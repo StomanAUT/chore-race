@@ -9,6 +9,7 @@ import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import floor_registry as fr
 
 from .const import DOMAIN
 from .errors import ChoreRaceError
@@ -54,22 +55,57 @@ def websocket_get_areas(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Return current HA areas without duplicating room management."""
-    registry = ar.async_get(hass)
+    """Return current HA areas and floors without duplicating place management."""
+    area_registry = ar.async_get(hass)
+    floor_registry = fr.async_get(hass)
     connection.send_result(
         msg["id"],
         sorted(
-            (
+            [
                 {
+                    "kind": "area",
                     "area_id": area.id,
                     "name": area.name,
                     "icon": area.icon,
                     "picture": area.picture,
                 }
-                for area in registry.async_list_areas()
-            ),
-            key=lambda area: area["name"].casefold(),
+                for area in area_registry.async_list_areas()
+            ]
+            + [
+                {
+                    "kind": "floor",
+                    "floor_id": floor.floor_id,
+                    "name": floor.name,
+                    "icon": floor.icon,
+                    "level": floor.level,
+                }
+                for floor in floor_registry.async_list_floors()
+            ],
+            key=lambda place: place["name"].casefold(),
         ),
+    )
+
+
+@websocket_api.websocket_command({vol.Required("type"): "chore_race/get_floors"})
+@callback
+def websocket_get_floors(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return current HA floors for whole-floor tasks."""
+    registry = fr.async_get(hass)
+    connection.send_result(
+        msg["id"],
+        [
+            {
+                "floor_id": floor.floor_id,
+                "name": floor.name,
+                "icon": floor.icon,
+                "level": floor.level,
+            }
+            for floor in registry.async_list_floors()
+        ],
     )
 
 
@@ -315,6 +351,7 @@ async def websocket_delete_chore_type(
         vol.Required("chore_type_id"): _ID,
         vol.Required("date"): vol.Coerce(date.fromisoformat),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("race_points"): _POINTS,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("source", default=TaskSource.MANUAL.value): vol.Coerce(
@@ -338,6 +375,7 @@ async def websocket_create_task(
             msg["chore_type_id"],
             msg["date"],
             area_id=msg.get("area_id"),
+            floor_id=msg.get("floor_id"),
             race_points=msg.get("race_points"),
             preferred_participant_id=msg.get("preferred_participant_id"),
             source=msg["source"],
@@ -359,6 +397,7 @@ async def websocket_create_task(
         vol.Optional("chore_type_id"): _ID,
         vol.Optional("date"): vol.Coerce(date.fromisoformat),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("race_points"): _POINTS,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("blocked"): bool,
@@ -423,6 +462,7 @@ async def websocket_delete_task(
             int, vol.Range(min=1, max=365)
         ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
     }
 )
@@ -442,6 +482,7 @@ async def websocket_create_recurrence_rule(
             frequency=msg["frequency"],
             interval=msg["interval"],
             area_id=msg.get("area_id"),
+            floor_id=msg.get("floor_id"),
             preferred_participant_id=msg.get("preferred_participant_id"),
         )
     except ChoreRaceError as err:
@@ -500,6 +541,7 @@ async def websocket_update_settings(
         vol.Optional("frequency"): vol.In(["days", "monthly", "yearly"]),
         vol.Optional("interval"): vol.All(int, vol.Range(min=1, max=365)),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("active"): bool,
     }
@@ -555,6 +597,7 @@ def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
     """Register read and admin-only planner commands."""
     for command in (
         websocket_get_areas,
+        websocket_get_floors,
         websocket_get_settings,
         websocket_get_recurrence_rules,
         websocket_create_participant,

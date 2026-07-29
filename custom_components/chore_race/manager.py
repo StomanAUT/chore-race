@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import floor_registry as fr
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -90,6 +91,11 @@ class ChoreRaceManager:
         if isinstance(points, bool) or not 0 <= points <= 1000:
             raise ValidationError(f"{field} must be between 0 and 1000")
         return points
+
+    @staticmethod
+    def _validate_location(area_id: str | None, floor_id: str | None) -> None:
+        if area_id is not None and floor_id is not None:
+            raise ValidationError("A task can use either an area or a floor, not both")
 
     async def async_create_participant(
         self,
@@ -299,6 +305,7 @@ class ChoreRaceManager:
         task_date: date,
         *,
         area_id: str | None = None,
+        floor_id: str | None = None,
         race_points: int | None = None,
         preferred_participant_id: str | None = None,
         source: TaskSource | str = TaskSource.MANUAL,
@@ -314,10 +321,15 @@ class ChoreRaceManager:
                 raise NotFoundError("Chore type not found")
             if preferred_participant_id is not None:
                 self._require_participant(preferred_participant_id)
+            self._validate_location(area_id, floor_id)
             if area_id is not None:
                 registry = ar.async_get(self.hass)
                 if registry.async_get_area(area_id) is None:
                     raise ValidationError("Home Assistant area does not exist")
+            if floor_id is not None:
+                registry = fr.async_get(self.hass)
+                if registry.async_get_floor(floor_id) is None:
+                    raise ValidationError("Home Assistant floor does not exist")
             source = TaskSource(source)
             if source is TaskSource.ENTITY and not source_entity_id:
                 raise ValidationError("Entity tasks require source_entity_id")
@@ -326,6 +338,7 @@ class ChoreRaceManager:
                 id=self._new_id(),
                 chore_type_id=chore_type_id,
                 area_id=area_id,
+                floor_id=floor_id,
                 date=task_date,
                 race_points=self._validate_points(
                     chore_type.default_race_points
@@ -355,6 +368,7 @@ class ChoreRaceManager:
         frequency: str,
         interval: int = 1,
         area_id: str | None = None,
+        floor_id: str | None = None,
         preferred_participant_id: str | None = None,
     ) -> dict[str, Any]:
         """Create a recurrence rule and materialize its first due task."""
@@ -366,11 +380,17 @@ class ChoreRaceManager:
             raise NotFoundError("Chore type not found")
         if preferred_participant_id is not None:
             self._require_participant(preferred_participant_id)
+        self._validate_location(area_id, floor_id)
         if (
             area_id is not None
             and ar.async_get(self.hass).async_get_area(area_id) is None
         ):
             raise ValidationError("Home Assistant area does not exist")
+        if (
+            floor_id is not None
+            and fr.async_get(self.hass).async_get_floor(floor_id) is None
+        ):
+            raise ValidationError("Home Assistant floor does not exist")
         rule = {
             "id": self._new_id(),
             "chore_type_id": chore_type_id,
@@ -378,6 +398,7 @@ class ChoreRaceManager:
             "frequency": frequency,
             "interval": interval,
             "area_id": area_id,
+            "floor_id": floor_id,
             "preferred_participant_id": preferred_participant_id,
             "active": True,
         }
@@ -397,6 +418,7 @@ class ChoreRaceManager:
             "frequency",
             "interval",
             "area_id",
+            "floor_id",
             "preferred_participant_id",
             "active",
         }
@@ -430,6 +452,14 @@ class ChoreRaceManager:
                 and ar.async_get(self.hass).async_get_area(changes["area_id"]) is None
             ):
                 raise ValidationError("Home Assistant area does not exist")
+            if (
+                changes.get("floor_id") is not None
+                and fr.async_get(self.hass).async_get_floor(changes["floor_id"]) is None
+            ):
+                raise ValidationError("Home Assistant floor does not exist")
+            final_area_id = changes.get("area_id", rule.get("area_id"))
+            final_floor_id = changes.get("floor_id", rule.get("floor_id"))
+            self._validate_location(final_area_id, final_floor_id)
             rule.update(changes)
             await self._async_commit()
             return rule
@@ -478,6 +508,7 @@ class ChoreRaceManager:
                 rule["chore_type_id"],
                 current,
                 area_id=rule.get("area_id"),
+                floor_id=rule.get("floor_id"),
                 preferred_participant_id=rule.get("preferred_participant_id"),
                 source=TaskSource.RECURRING,
                 source_entity_id=source_id,
@@ -493,6 +524,7 @@ class ChoreRaceManager:
             "chore_type_id",
             "date",
             "area_id",
+            "floor_id",
             "race_points",
             "preferred_participant_id",
             "blocked",
@@ -513,6 +545,13 @@ class ChoreRaceManager:
                 registry = ar.async_get(self.hass)
                 if registry.async_get_area(changes["area_id"]) is None:
                     raise ValidationError("Home Assistant area does not exist")
+            if changes.get("floor_id") is not None:
+                registry = fr.async_get(self.hass)
+                if registry.async_get_floor(changes["floor_id"]) is None:
+                    raise ValidationError("Home Assistant floor does not exist")
+            final_area_id = changes.get("area_id", task.area_id)
+            final_floor_id = changes.get("floor_id", task.floor_id)
+            self._validate_location(final_area_id, final_floor_id)
             if changes.get("preferred_participant_id") is not None:
                 self._require_participant(changes["preferred_participant_id"])
             if "race_points" in changes:
