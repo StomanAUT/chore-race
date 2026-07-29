@@ -127,9 +127,9 @@ run against a production configuration.
 ## Roadmap
 
 1. 0.2 Planner UI and recurring tasks
-2. 0.3 Race engine and race scoring (current development branch)
+2. 0.3 Race engine and race scoring
 3. 0.4 Child-friendly tablet card
-4. 0.5 Rewards
+4. 0.5 Rewards (current development branch)
 5. 0.6 Automation/entity helpers
 6. 0.7 General task chains
 7. 1.0 Stable public family release

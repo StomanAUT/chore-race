@@ -15,6 +15,7 @@ The card visualizes and operates:
 - immediate task and leaderboard refresh after a successful completion;
 - ranked live scoring with base, streak, fair-play and copilot breakdowns;
 - a unique champion result after the finish;
+- an immutable champion reward choice and the latest winner selection;
 - automatic and configurable reduced-motion behavior;
 - safe connection cleanup, bounded refresh intervals, stale-request rejection,
   and last-known-state display when an API call fails.
@@ -82,13 +83,16 @@ system preference.
 
 ## Race completion flow
 
-While `chore_race/get_race_state` reports `running`, each open task exposes an
-**Erledigt** action. It opens a two-step scoring dialog for the driver and an
-optional copilot or fair-play bonus, then calls
-`chore_race/complete_race_task`. The backend remains authoritative for active
-race state, participant permissions, adult-only chores, duplicate completion,
-scoring, and persistence. Ready and finished races never show a misleading
-completion button.
+Each open task exposes an **Erledigt** action. During a running race it opens a
+two-step scoring dialog for the driver and an optional copilot or fair-play
+bonus, then calls `chore_race/complete_race_task`. Before or after a race it
+uses `chore_race/complete_task` and awards only the configured normal everyday
+point. The backend remains authoritative for participant permissions,
+adult-only chores, duplicate completion, scoring, and persistence.
+
+The planner also maintains the reward catalog. After a finished race with one
+unique positive champion, the race card offers each active reward exactly once
+and shows the recorded winner choice afterward.
 
 Administrators can start a ready race or a new race after the previous finish
 directly from the card. During a running race they also receive a quiet

@@ -138,6 +138,20 @@ def websocket_get_recurrence_rules(
         )
 
 
+@websocket_api.websocket_command({vol.Required("type"): "chore_race/get_rewards"})
+@callback
+def websocket_get_rewards(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return all rewards for the admin planner."""
+    if (manager := _require_manager(hass, connection, msg)) is not None:
+        connection.send_result(
+            msg["id"], manager.rewards_snapshot(include_inactive=True)
+        )
+
+
 @websocket_api.require_admin
 @websocket_api.async_response
 @websocket_api.websocket_command(
@@ -594,6 +608,101 @@ async def websocket_delete_recurrence_rule(
     connection.send_result(msg["id"], {})
 
 
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/create_reward",
+        vol.Required("name"): _NAME,
+        vol.Optional("icon", default="mdi:gift-outline"): vol.All(
+            str, vol.Length(max=100)
+        ),
+        vol.Optional("image"): _OPTIONAL_TEXT,
+        vol.Optional("sort_order", default=0): int,
+    }
+)
+async def websocket_create_reward(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Create a champion reward."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        reward = await manager.async_create_reward(
+            msg["name"],
+            icon=msg["icon"],
+            image=msg.get("image"),
+            sort_order=msg["sort_order"],
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], reward.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/update_reward",
+        vol.Required("reward_id"): _ID,
+        vol.Optional("name"): _NAME,
+        vol.Optional("icon"): vol.All(str, vol.Length(max=100)),
+        vol.Optional("image"): _OPTIONAL_TEXT,
+        vol.Optional("active"): bool,
+        vol.Optional("sort_order"): int,
+    }
+)
+async def websocket_update_reward(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update or deactivate a champion reward."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value
+        for key, value in msg.items()
+        if key not in {"id", "type", "reward_id"}
+    }
+    try:
+        reward = await manager.async_update_reward(msg["reward_id"], **changes)
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], reward.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_reward",
+        vol.Required("reward_id"): _ID,
+    }
+)
+async def websocket_delete_reward(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete one unused champion reward."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_reward(msg["reward_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
+
+
 def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
     """Register read and admin-only planner commands."""
     for command in (
@@ -601,6 +710,7 @@ def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
         websocket_get_floors,
         websocket_get_settings,
         websocket_get_recurrence_rules,
+        websocket_get_rewards,
         websocket_create_participant,
         websocket_update_participant,
         websocket_create_chore_type,
@@ -613,5 +723,8 @@ def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
         websocket_update_settings,
         websocket_update_recurrence_rule,
         websocket_delete_recurrence_rule,
+        websocket_create_reward,
+        websocket_update_reward,
+        websocket_delete_reward,
     ):
         websocket_api.async_register_command(hass, command)

@@ -202,6 +202,51 @@ class Completion:
 
 
 @dataclass(slots=True)
+class Reward:
+    """A winner-selectable household reward."""
+
+    id: str
+    name: str
+    icon: str = "mdi:gift-outline"
+    image: str | None = None
+    active: bool = True
+    sort_order: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible data."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Restore a reward."""
+        return cls(**data)
+
+
+@dataclass(slots=True)
+class RewardSelection:
+    """Immutable record of a champion's choice for one race."""
+
+    id: str
+    race_id: str
+    reward_id: str
+    participant_id: str
+    selected_at: datetime
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible data."""
+        data = asdict(self)
+        data["selected_at"] = self.selected_at.isoformat()
+        return data
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Restore a reward selection."""
+        values = dict(data)
+        values["selected_at"] = datetime.fromisoformat(values["selected_at"])
+        return cls(**values)
+
+
+@dataclass(slots=True)
 class Settings:
     """Persisted settings with race-ready defaults."""
 
@@ -235,7 +280,8 @@ class ChoreRaceData:
     race_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
     recurrence_rules: dict[str, dict[str, Any]] = field(default_factory=dict)
     task_chains: dict[str, dict[str, Any]] = field(default_factory=dict)
-    rewards: dict[str, dict[str, Any]] = field(default_factory=dict)
+    rewards: dict[str, Reward] = field(default_factory=dict)
+    reward_selections: dict[str, RewardSelection] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return JSON-compatible storage data."""
@@ -255,7 +301,13 @@ class ChoreRaceData:
             "race_sessions": self.race_sessions,
             "recurrence_rules": self.recurrence_rules,
             "task_chains": self.task_chains,
-            "rewards": self.rewards,
+            "rewards": {
+                key: value.to_dict() for key, value in self.rewards.items()
+            },
+            "reward_selections": {
+                key: value.to_dict()
+                for key, value in self.reward_selections.items()
+            },
         }
 
     @classmethod
@@ -283,5 +335,12 @@ class ChoreRaceData:
             race_sessions=data.get("race_sessions", {}),
             recurrence_rules=data.get("recurrence_rules", {}),
             task_chains=data.get("task_chains", {}),
-            rewards=data.get("rewards", {}),
+            rewards={
+                key: Reward.from_dict(value)
+                for key, value in data.get("rewards", {}).items()
+            },
+            reward_selections={
+                key: RewardSelection.from_dict(value)
+                for key, value in data.get("reward_selections", {}).items()
+            },
         )

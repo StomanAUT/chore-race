@@ -106,6 +106,7 @@
         areas: [],
         floors: [],
         recurrenceRules: [],
+        rewards: [],
       };
     }
 
@@ -142,11 +143,12 @@
       this._loading = true;
       this._render();
       try {
-        const [participants, choreTypes, tasks, places] = await Promise.all([
+        const [participants, choreTypes, tasks, places, rewards] = await Promise.all([
           this._hass.callWS({ type: "chore_race/get_participants" }),
           this._hass.callWS({ type: "chore_race/get_chore_types" }),
           this._hass.callWS({ type: "chore_race/get_tasks" }),
           this._hass.callWS({ type: "chore_race/get_areas" }),
+          this._hass.callWS({ type: "chore_race/get_rewards" }),
         ]);
         let recurrenceRules = [];
         try {
@@ -161,6 +163,7 @@
           choreTypes,
           tasks,
           recurrenceRules,
+          rewards,
           areas: places.filter((item) => item.kind !== "floor").sort((a, b) =>
             String(a.name).localeCompare(String(b.name), "de"),
           ),
@@ -207,6 +210,48 @@
         "click",
         () => this._load(),
       );
+
+      this.shadowRoot
+        .querySelector('[data-form="reward"]')
+        ?.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const values = new FormData(event.currentTarget);
+          this._submit(
+            "create_reward",
+            {
+              name: values.get("name").trim(),
+              icon: values.get("icon") || "mdi:gift-outline",
+              sort_order: Number(values.get("sort_order")) || 0,
+            },
+            "Belohnung wurde angelegt.",
+          );
+        });
+
+      this.shadowRoot.querySelectorAll("[data-reward-action]").forEach((button) => {
+        button.addEventListener("click", () => {
+          const rewardId = button.dataset.rewardId;
+          const action = button.dataset.rewardAction;
+          if (action === "delete") {
+            if (!window.confirm("Diese unbenutzte Belohnung endgültig löschen?")) return;
+            this._submit(
+              "delete_reward",
+              { reward_id: rewardId },
+              "Belohnung wurde gelöscht.",
+            );
+            return;
+          }
+          this._submit(
+            "update_reward",
+            {
+              reward_id: rewardId,
+              active: action === "activate",
+            },
+            action === "activate"
+              ? "Belohnung wurde aktiviert."
+              : "Belohnung wurde deaktiviert.",
+          );
+        });
+      });
 
       this.shadowRoot
         .querySelector('[data-form="participant"]')
@@ -743,6 +788,35 @@
         .join("");
     }
 
+    _rewardList() {
+      if (!this._data.rewards.length) {
+        return '<p class="empty">Noch keine Belohnungen angelegt.</p>';
+      }
+      return this._data.rewards
+        .map(
+          (reward) => `<li class="${reward.active ? "" : "inactive"}">
+            <span class="task-icon"><ha-icon icon="${escapeHtml(
+              reward.icon || "mdi:gift-outline",
+            )}"></ha-icon></span>
+            <span><strong>${escapeHtml(reward.name)}</strong>
+              <small>${reward.active ? "Für Gewinner auswählbar" : "Inaktiv"}</small></span>
+            <span class="rule-actions">
+              <button class="secondary" data-reward-action="${
+                reward.active ? "deactivate" : "activate"
+              }" data-reward-id="${escapeHtml(reward.id)}">
+                ${reward.active ? "Deaktivieren" : "Aktivieren"}</button>
+              ${
+                reward.active
+                  ? ""
+                  : `<button class="danger" data-reward-action="delete"
+                      data-reward-id="${escapeHtml(reward.id)}">Löschen</button>`
+              }
+            </span>
+          </li>`,
+        )
+        .join("");
+    }
+
     _recurrenceRuleList() {
       const choreById = Object.fromEntries(
         this._data.choreTypes.map((item) => [item.id, item]),
@@ -1035,6 +1109,28 @@
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
             </form>
           </div>
+          <section class="rewards"><div class="list-head"><div><h3>Belohnungen</h3>
+            <p>Der eindeutige Rennsieger darf nach dem Zieleinlauf einmal wählen.</p></div>
+            <span>${this._data.rewards.filter((item) => item.active).length}</span></div>
+            <form data-form="reward" class="compact-form reward-form">
+              <div class="reward-fields">
+                <label>Bezeichnung<input required maxlength="100" name="name"
+                  placeholder="z. B. Filmabend"></label>
+                <label>Motiv<select name="icon">
+                  <option value="mdi:movie-open">Filmabend</option>
+                  <option value="mdi:ice-cream">Eis essen</option>
+                  <option value="mdi:food-pizza">Wunschessen</option>
+                  <option value="mdi:weather-night">Länger aufbleiben</option>
+                  <option value="mdi:gamepad-variant">Spielezeit</option>
+                  <option value="mdi:crown">Champion-Wunsch</option>
+                </select></label>
+                <label>Reihenfolge<input type="number" name="sort_order"
+                  min="0" max="1000" value="${this._data.rewards.length}"></label>
+              </div>
+              <button ${disabled}>Belohnung anlegen</button>
+            </form>
+            <ul>${this._rewardList()}</ul>
+          </section>
           <section class="rules"><div class="list-head"><div><h3>Wiederholungsregeln</h3>
             <p>Automatische Zeitpläne pausieren oder verwalten.</p></div>
             <span>${this._data.recurrenceRules.length}</span></div>
@@ -1093,7 +1189,7 @@
           font-size:17px; line-height:1.1; }
         .forms { display:grid; grid-template-columns:1fr;
           gap:12px; margin-top:12px; align-items:start; }
-        form,.tasks,.types,.rules { padding:15px; border:1px solid var(--line);
+        form,.tasks,.types,.rules,.rewards { padding:15px; border:1px solid var(--line);
           border-radius:16px; background:var(--panel); }
         .section-head { display:flex; align-items:flex-start; gap:9px; margin-bottom:10px; }
         .step { display:grid; place-items:center; flex:0 0 24px; height:24px; color:var(--ink);
@@ -1184,7 +1280,10 @@
           background:color-mix(in srgb,var(--error-color,#db4437) 8%,var(--surface));
           border-color:color-mix(in srgb,var(--error-color,#db4437) 22%,var(--line)); }
         [hidden] { display:none !important; }
-        .tasks,.types,.rules { margin-top:12px; }
+        .tasks,.types,.rules,.rewards { margin-top:12px; }
+        .reward-form { margin:0 0 10px; padding:10px; }
+        .reward-fields { display:grid; grid-template-columns:2fr 1.4fr .7fr; gap:8px; }
+        .reward-fields label { margin:0; }
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
         li { display:flex; gap:10px; align-items:center; min-width:0; padding:9px 10px;
@@ -1239,7 +1338,8 @@
           .overview span { min-width:0; padding:8px 6px; text-align:center;
             overflow-wrap:anywhere; }
           .overview strong { font-size:16px; }
-          form,.tasks,.types,.rules { padding:12px; }
+          form,.tasks,.types,.rules,.rewards { padding:12px; }
+          .reward-fields { grid-template-columns:1fr; }
           .rule-actions { width:100%; padding-left:38px; }
           .manageable > details > summary { padding-right:32px; }
           .edit-hint { padding:4px; font-size:0; }

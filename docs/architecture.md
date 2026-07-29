@@ -35,6 +35,19 @@ window. It exposes base, fair-play, streak and copilot subtotals. A finished
 race has a champion only when one participant holds a unique positive lead;
 ties deliberately produce no champion.
 
+## Rewards
+
+Administrators maintain a small ordered reward catalog. A reward can be
+deactivated without changing history. After a finished race, only a unique
+champion with positive race points can make one reward selection. The manager
+derives that participant from the authoritative race leaderboard; clients
+never submit a winner identity.
+
+The selection is immutable, belongs to one stable race ID and snapshots the
+selected reward and participant IDs with its timestamp. Used rewards cannot be
+deleted, only deactivated. Race state exposes the current selection and the
+most recent household winner choice for the tablet card.
+
 ## Race lifecycle
 
 A session moves from `ready` to `running` and finally `finished`. Only one

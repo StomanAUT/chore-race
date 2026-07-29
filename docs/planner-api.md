@@ -214,3 +214,24 @@ teamwork scoring:
 `copilot_participant_id` and `fair_play: true` cannot be combined. The result
 is the updated race state including countdown, open tasks, a ranked scoring
 breakdown, the most recent completion and the champion after a unique win.
+
+## Reward API
+
+The planner reads and manages the ordered reward catalog through
+`chore_race/get_rewards`, `chore_race/create_reward`,
+`chore_race/update_reward` and `chore_race/delete_reward`. Mutations require a
+Home Assistant administrator.
+
+After a finished race, the shared household tablet records the unique
+champion's one-time choice with:
+
+```json
+{
+  "type": "chore_race/select_reward",
+  "race_id": "race-id",
+  "reward_id": "reward-id"
+}
+```
+
+The backend derives the champion, rejects ties, non-positive results, active
+races, inactive rewards and repeat selections.

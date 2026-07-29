@@ -652,6 +652,45 @@ async def test_finished_race_exposes_unique_champion_and_ties(manager):
     assert finished["champion"]["points"] == task.race_points
 
 
+async def test_champion_selects_one_auditable_reward(manager):
+    driver, _, task = await _base_records(manager)
+    reward = await manager.async_create_reward(
+        "Filmabend", icon="mdi:movie-open"
+    )
+    race = await manager.async_start_race()
+    await manager.async_complete_task(
+        task.id, driver.id, require_active_race=True
+    )
+    await manager.async_stop_race()
+
+    selection = await manager.async_select_reward(race["race_id"], reward.id)
+    state = manager.race_state(race["race_id"])
+
+    assert selection["participant_id"] == driver.id
+    assert selection["participant_name"] == driver.name
+    assert selection["reward_name"] == reward.name
+    assert state["reward_selection"]["id"] == selection["id"]
+    assert state["last_reward_selection"]["id"] == selection["id"]
+
+    with pytest.raises(ConflictError, match="already selected"):
+        await manager.async_select_reward(race["race_id"], reward.id)
+    with pytest.raises(ConflictError, match="must be deactivated"):
+        await manager.async_delete_reward(reward.id)
+
+
+async def test_reward_selection_requires_finished_race_champion(manager):
+    _, _, _ = await _base_records(manager)
+    reward = await manager.async_create_reward("Eis essen")
+    race = await manager.async_start_race()
+
+    with pytest.raises(ConflictError, match="after a race"):
+        await manager.async_select_reward(race["race_id"], reward.id)
+
+    await manager.async_stop_race()
+    with pytest.raises(ConflictError, match="unique champion"):
+        await manager.async_select_reward(race["race_id"], reward.id)
+
+
 async def test_reset_selected_race_reverts_only_its_completions(manager):
     """A reset reopens its race tasks without touching unrelated points."""
     participant, chore_type, normal_task = await _base_records(manager)

@@ -29,6 +29,8 @@ from .models import (
     Difficulty,
     Participant,
     RaceStatus,
+    Reward,
+    RewardSelection,
     ScoringMode,
     Settings,
     TaskSource,
@@ -318,6 +320,97 @@ class ChoreRaceManager:
                 setattr(self._data.settings, key, value)
             await self._async_commit()
             return self._data.settings
+
+    async def async_create_reward(
+        self,
+        name: str,
+        *,
+        icon: str = "mdi:gift-outline",
+        image: str | None = None,
+        sort_order: int = 0,
+    ) -> Reward:
+        """Create a reward that a race champion may choose."""
+        reward = Reward(
+            id=self._new_id(),
+            name=self._validate_name(name),
+            icon=icon.strip() or "mdi:gift-outline",
+            image=image,
+            sort_order=sort_order,
+        )
+        async with self._mutation_lock:
+            self._data.rewards[reward.id] = reward
+            await self._async_commit()
+        return reward
+
+    async def async_update_reward(
+        self, reward_id: str, **changes: Any
+    ) -> Reward:
+        """Update a reward while preserving historical selections."""
+        allowed = {"name", "icon", "image", "active", "sort_order"}
+        if unknown := set(changes) - allowed:
+            raise ValidationError(f"Unknown reward fields: {sorted(unknown)}")
+        async with self._mutation_lock:
+            reward = self._data.rewards.get(reward_id)
+            if reward is None:
+                raise NotFoundError("Reward not found")
+            if "name" in changes:
+                changes["name"] = self._validate_name(changes["name"])
+            if "icon" in changes:
+                changes["icon"] = (
+                    changes["icon"].strip() or "mdi:gift-outline"
+                )
+            for key, value in changes.items():
+                setattr(reward, key, value)
+            await self._async_commit()
+            return reward
+
+    async def async_delete_reward(self, reward_id: str) -> None:
+        """Delete only an unused reward; selected rewards remain auditable."""
+        async with self._mutation_lock:
+            if reward_id not in self._data.rewards:
+                raise NotFoundError("Reward not found")
+            if any(
+                selection.reward_id == reward_id
+                for selection in self._data.reward_selections.values()
+            ):
+                raise ConflictError(
+                    "Rewards referenced by winner selections must be deactivated"
+                )
+            del self._data.rewards[reward_id]
+            await self._async_commit()
+
+    async def async_select_reward(
+        self, race_id: str, reward_id: str
+    ) -> dict[str, Any]:
+        """Persist the unique champion's one immutable reward choice."""
+        async with self._mutation_lock:
+            race = self._require_race(race_id)
+            state = self.race_state(race["id"])
+            if state["status"] != RaceStatus.FINISHED:
+                raise ConflictError("Rewards can only be selected after a race")
+            champion = state["champion"]
+            if champion is None:
+                raise ConflictError(
+                    "A reward requires one unique champion with positive points"
+                )
+            reward = self._data.rewards.get(reward_id)
+            if reward is None or not reward.active:
+                raise NotFoundError("Active reward not found")
+            if any(
+                selection.race_id == race["id"]
+                for selection in self._data.reward_selections.values()
+            ):
+                raise ConflictError("A reward was already selected for this race")
+            selection = RewardSelection(
+                id=self._new_id(),
+                race_id=race["id"],
+                reward_id=reward.id,
+                participant_id=champion["participant_id"],
+                selected_at=dt_util.utcnow(),
+            )
+            self._data.reward_selections[selection.id] = selection
+            await self._async_commit()
+            return self._reward_selection_snapshot(selection)
 
     async def async_create_task(
         self,
@@ -884,6 +977,65 @@ class ChoreRaceManager:
             state["reverted_completions"] = reverted
             return state
 
+    def rewards_snapshot(
+        self, *, include_inactive: bool = False
+    ) -> list[dict[str, Any]]:
+        """Return rewards ordered for planner or champion presentation."""
+        return [
+            reward.to_dict()
+            for reward in sorted(
+                self._data.rewards.values(),
+                key=lambda item: (item.sort_order, item.name.casefold()),
+            )
+            if include_inactive or reward.active
+        ]
+
+    def _reward_selection_snapshot(
+        self, selection: RewardSelection
+    ) -> dict[str, Any]:
+        """Enrich a persisted winner choice with current presentation names."""
+        reward = self._data.rewards.get(selection.reward_id)
+        participant = self._data.participants.get(selection.participant_id)
+        return {
+            **selection.to_dict(),
+            "reward_name": reward.name if reward else "Belohnung",
+            "reward_icon": reward.icon if reward else "mdi:gift-outline",
+            "reward_image": reward.image if reward else None,
+            "participant_name": (
+                participant.name if participant else "Teilnehmer"
+            ),
+        }
+
+    def _reward_selection_for_race(
+        self, race_id: str
+    ) -> dict[str, Any] | None:
+        selection = next(
+            (
+                item
+                for item in self._data.reward_selections.values()
+                if item.race_id == race_id
+            ),
+            None,
+        )
+        return (
+            self._reward_selection_snapshot(selection)
+            if selection is not None
+            else None
+        )
+
+    def last_reward_selection(self) -> dict[str, Any] | None:
+        """Return the household's most recent winner choice."""
+        selection = max(
+            self._data.reward_selections.values(),
+            key=lambda item: item.selected_at,
+            default=None,
+        )
+        return (
+            self._reward_selection_snapshot(selection)
+            if selection is not None
+            else None
+        )
+
     def race_state(
         self, race_id: str | None = None, *, now: datetime | None = None
     ) -> dict[str, Any]:
@@ -912,6 +1064,9 @@ class ChoreRaceManager:
                     if participant.active
                 ],
                 "champion": None,
+                "rewards": self.rewards_snapshot(),
+                "reward_selection": None,
+                "last_reward_selection": self.last_reward_selection(),
                 "last_completion": None,
                 "current_task": open_tasks[0] if open_tasks else None,
                 "open_tasks": open_tasks,
@@ -937,6 +1092,9 @@ class ChoreRaceManager:
             "leaderboard": leaderboard,
             "participant_ids": list(self._race_participant_ids(race)),
             "champion": champion,
+            "rewards": self.rewards_snapshot(),
+            "reward_selection": self._reward_selection_for_race(race["id"]),
+            "last_reward_selection": self.last_reward_selection(),
             "last_completion": self._race_last_completion(race["id"]),
             "current_task": open_tasks[0] if open_tasks else None,
             "open_tasks": open_tasks,

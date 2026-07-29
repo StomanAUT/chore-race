@@ -304,6 +304,32 @@ async def websocket_complete_race_task(
     connection.send_result(msg["id"], manager.race_state())
 
 
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/select_reward",
+        vol.Required("race_id"): vol.All(str, vol.Length(min=1, max=64)),
+        vol.Required("reward_id"): vol.All(str, vol.Length(min=1, max=64)),
+    }
+)
+async def websocket_select_reward(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Record the unique champion's reward choice once."""
+    manager = _manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_loaded", "Chore Race is not loaded")
+        return
+    try:
+        await manager.async_select_reward(msg["race_id"], msg["reward_id"])
+    except ChoreRaceError as err:
+        connection.send_error(msg["id"], "chore_race_error", str(err))
+        return
+    connection.send_result(msg["id"], manager.race_state(msg["race_id"]))
+
+
 def async_register_websocket_commands(hass: HomeAssistant) -> None:
     """Register all authenticated commands once."""
     for command in (
@@ -319,5 +345,6 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
         websocket_remove_race_participant,
         websocket_complete_task,
         websocket_complete_race_task,
+        websocket_select_reward,
     ):
         websocket_api.async_register_command(hass, command)

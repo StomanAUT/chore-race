@@ -364,6 +364,35 @@
       }
     }
 
+    async _selectReward(rewardId) {
+      const raceId = this._data?.raceState?.race_id;
+      if (!this._hass?.callWS || !raceId || !rewardId || this._actionBusy) return;
+      if (!window.confirm("Diese Belohnung verbindlich für den Champion auswählen?")) {
+        return;
+      }
+      this._actionBusy = true;
+      this._actionError = undefined;
+      this._render();
+      try {
+        const raceState = await this._hass.callWS({
+          type: "chore_race/select_reward",
+          race_id: raceId,
+          reward_id: rewardId,
+        });
+        this._data = {
+          ...this._data,
+          raceState,
+          leaderboard: raceState.leaderboard ?? [],
+        };
+        await this._load();
+      } catch (error) {
+        this._actionError = errorMessage(error);
+      } finally {
+        this._actionBusy = false;
+        this._render();
+      }
+    }
+
     async _changeRace(action, payload = {}) {
       if (!this._hass?.callWS || this._actionBusy) return;
       const confirmations = {
@@ -413,6 +442,11 @@
             }),
           );
         });
+      this.shadowRoot.querySelectorAll("[data-select-reward]").forEach((button) => {
+        button.addEventListener("click", () =>
+          this._selectReward(button.dataset.selectReward),
+        );
+      });
       this.shadowRoot.querySelectorAll("[data-complete-task]").forEach((button) => {
         button.addEventListener("click", () => {
           this._selectedTaskId = button.dataset.completeTask;
@@ -761,13 +795,53 @@
               }</small>
             </aside>`
           : "";
+      const rewardSelection = race.reward_selection;
+      const availableRewards = race.rewards ?? [];
       const champion = race.champion
         ? `<aside class="champion">
             <span>🏆 CHORE RACE CHAMPION</span>
             <strong>${escapeHtml(race.champion.name)}</strong>
             <small>${Number(race.champion.points) || 0} Punkte</small>
+            ${
+              rewardSelection
+                ? `<div class="chosen-reward">
+                    <ha-icon icon="${escapeHtml(
+                      rewardSelection.reward_icon || "mdi:gift-outline",
+                    )}"></ha-icon>
+                    <span><small>GEWINNERWAHL</small>
+                      <strong>${escapeHtml(rewardSelection.reward_name)}</strong></span>
+                  </div>`
+                : availableRewards.length
+                  ? `<div class="reward-choice">
+                      <small>Wähle deine Belohnung</small>
+                      <div>${availableRewards
+                        .map(
+                          (reward) =>
+                            `<button data-select-reward="${escapeHtml(reward.id)}"
+                              ${this._actionBusy ? "disabled" : ""}>
+                              <ha-icon icon="${escapeHtml(
+                                reward.icon || "mdi:gift-outline",
+                              )}"></ha-icon>
+                              <span>${escapeHtml(reward.name)}</span>
+                            </button>`,
+                        )
+                        .join("")}</div>
+                    </div>`
+                  : `<small>Belohnungen können im Planer angelegt werden.</small>`
+            }
           </aside>`
         : "";
+      const lastReward =
+        !race.champion && race.last_reward_selection
+          ? `<aside class="last-reward">
+              <ha-icon icon="${escapeHtml(
+                race.last_reward_selection.reward_icon || "mdi:gift-outline",
+              )}"></ha-icon>
+              <span><small>LETZTE GEWINNERWAHL</small>
+                <strong>${escapeHtml(race.last_reward_selection.participant_name)}
+                  · ${escapeHtml(race.last_reward_selection.reward_name)}</strong></span>
+            </aside>`
+          : "";
 
       this.shadowRoot.innerHTML = `
         <style>${this._styles()}</style>
@@ -831,7 +905,7 @@
               ? `<p class="action-error race-action-error">${escapeHtml(this._actionError)}</p>`
               : ""
           }
-          ${champion || scoreFeedback}
+          ${champion || lastReward || scoreFeedback}
           <div class="race-stage">
             <section class="stage-panel lanes-panel" aria-label="Rennstrecke">
               <div class="section-heading">
@@ -996,7 +1070,7 @@
         .race-action-error { margin:-6px 0 18px; }
         .race-hint { max-width:96px; text-align:right; font-size:9px !important;
           white-space:normal !important; }
-        .score-feedback,.champion { display:grid; gap:2px; margin:0 0 12px;
+        .score-feedback,.champion,.last-reward { display:grid; gap:2px; margin:0 0 12px;
           padding:10px 13px; border:1px solid var(--line); border-radius:14px;
           background:color-mix(in srgb,var(--accent) 10%,var(--surface-raised)); }
         .score-feedback { grid-template-columns:auto auto minmax(0,1fr);
@@ -1010,6 +1084,24 @@
           radial-gradient(circle at 50% 0%,rgba(255,193,7,.2),transparent 66%),
           var(--surface-raised); }
         .champion strong { font-size:26px; }
+        .chosen-reward,.last-reward { display:flex; align-items:center; justify-content:center;
+          gap:10px; margin-top:8px; padding:9px 11px; border:1px solid var(--line);
+          border-radius:12px; background:var(--surface); text-align:left; }
+        .chosen-reward ha-icon,.last-reward ha-icon { color:var(--accent);
+          --mdc-icon-size:28px; }
+        .chosen-reward span,.last-reward span { display:grid; gap:1px; }
+        .chosen-reward span small,.last-reward span small { color:var(--muted);
+          font-size:8px; font-weight:850; letter-spacing:.12em; }
+        .chosen-reward span strong,.last-reward span strong { font-size:13px; }
+        .last-reward { justify-content:flex-start; margin-bottom:12px; }
+        .reward-choice { display:grid; gap:7px; margin-top:10px; }
+        .reward-choice > div { display:flex; justify-content:center; flex-wrap:wrap; gap:7px; }
+        .reward-choice button { display:flex; align-items:center; gap:6px; min-height:40px;
+          padding:7px 11px; color:var(--ink); background:var(--surface);
+          border:1px solid var(--line); border-radius:11px; font-size:11px; }
+        .reward-choice button:hover { border-color:var(--accent);
+          background:color-mix(in srgb,var(--accent) 9%,var(--surface)); }
+        .reward-choice ha-icon { --mdc-icon-size:20px; }
         .picker-backdrop { position:fixed; z-index:20; inset:0; display:grid;
           place-items:center; padding:18px; background:rgba(5,10,20,.68); }
         .picker { width:min(100%,520px); max-height:min(82vh,720px); overflow:auto;
