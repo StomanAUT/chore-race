@@ -49,3 +49,19 @@ Chore Race migrates its versioned store when loading. Never edit files below
 Restore the full Home Assistant backup created immediately before the upgrade.
 For a manual card-only rollback, restore the previous JavaScript files, change
 their resource query value, and reload the browser.
+
+## Release clean-install gate
+
+Every pull request creates the same `chore_race.zip` file consumed by HACS,
+extracts it into a new temporary `config/custom_components/chore_race`
+directory, validates its paths and manifest, and compiles every included
+Python file. The Home Assistant test suite additionally creates a new Chore
+Race config entry with empty storage, verifies all four aggregate sensors, and
+unloads the integration again.
+
+Run the package gate locally with:
+
+```text
+python scripts/release_package.py build chore_race.zip
+python scripts/release_package.py validate chore_race.zip
+```

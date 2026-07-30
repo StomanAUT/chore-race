@@ -66,11 +66,8 @@ jobs:
 
       - name: Build HACS release archive
         run: |
-          cd custom_components/chore_race
-          zip -r ../../chore_race.zip . \
-            -x "__pycache__/*" "*.pyc" "*.pyo"
-          cd ../..
-          unzip -t chore_race.zip
+          python scripts/release_package.py build chore_race.zip
+          python scripts/release_package.py validate chore_race.zip
 
       - name: Publish GitHub release
         env:
