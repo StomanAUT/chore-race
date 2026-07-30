@@ -121,6 +121,7 @@ class ChoreTask:
     status: TaskStatus = TaskStatus.OPEN
     source: TaskSource = TaskSource.MANUAL
     source_entity_id: str | None = None
+    deduplication_key: str | None = None
     chain_id: str | None = None
     chain_step_id: str | None = None
     blocked: bool = False

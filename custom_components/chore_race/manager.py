@@ -431,60 +431,169 @@ class ChoreRaceManager:
         preferred_participant_id: str | None = None,
         source: TaskSource | str = TaskSource.MANUAL,
         source_entity_id: str | None = None,
+        deduplication_key: str | None = None,
         chain_id: str | None = None,
         chain_step_id: str | None = None,
         blocked: bool = False,
     ) -> ChoreTask:
         """Create a concrete task with point values snapshotted now."""
         async with self._mutation_lock:
-            chore_type = self._data.chore_types.get(chore_type_id)
-            if chore_type is None:
-                raise NotFoundError("Chore type not found")
-            if preferred_participant_id is not None:
-                self._require_participant(preferred_participant_id)
-            self._validate_location(area_id, floor_id)
-            if area_id is not None:
-                registry = ar.async_get(self.hass)
-                if registry.async_get_area(area_id) is None:
-                    raise ValidationError("Home Assistant area does not exist")
-            if floor_id is not None:
-                registry = fr.async_get(self.hass)
-                if registry.async_get_floor(floor_id) is None:
-                    raise ValidationError("Home Assistant floor does not exist")
-            source = TaskSource(source)
-            if source is TaskSource.ENTITY and not source_entity_id:
-                raise ValidationError("Entity tasks require source_entity_id")
-            base_points = (
-                chore_type.default_race_points
-                if race_points is None
-                else race_points
-            )
-            total_points, points_multiplier = self._task_points(
-                base_points, floor_id
-            )
-            now = dt_util.utcnow()
-            task = ChoreTask(
-                id=self._new_id(),
-                chore_type_id=chore_type_id,
+            task = self._build_task(
+                chore_type_id,
+                task_date,
                 area_id=area_id,
                 floor_id=floor_id,
-                date=task_date,
-                race_points=total_points,
+                race_points=race_points,
                 preferred_participant_id=preferred_participant_id,
                 source=source,
                 source_entity_id=source_entity_id,
+                deduplication_key=deduplication_key,
                 chain_id=chain_id,
                 chain_step_id=chain_step_id,
                 blocked=blocked,
-                base_race_points=base_points,
-                points_multiplier=points_multiplier,
-                created_at=now,
-                updated_at=now,
             )
             self._data.tasks[task.id] = task
             await self._async_commit()
-            self.hass.bus.async_fire(EVENT_TASK_CREATED, {"task_id": task.id})
-            return task
+        self._fire_task_created(task)
+        return task
+
+    def _build_task(
+        self,
+        chore_type_id: str,
+        task_date: date,
+        *,
+        area_id: str | None,
+        floor_id: str | None,
+        race_points: int | None,
+        preferred_participant_id: str | None,
+        source: TaskSource | str,
+        source_entity_id: str | None,
+        deduplication_key: str | None,
+        chain_id: str | None,
+        chain_step_id: str | None,
+        blocked: bool,
+    ) -> ChoreTask:
+        """Validate and build one task while the caller owns the mutation lock."""
+        chore_type = self._data.chore_types.get(chore_type_id)
+        if chore_type is None:
+            raise NotFoundError("Chore type not found")
+        if preferred_participant_id is not None:
+            self._require_participant(preferred_participant_id)
+        self._validate_location(area_id, floor_id)
+        if (
+            area_id is not None
+            and ar.async_get(self.hass).async_get_area(area_id) is None
+        ):
+            raise ValidationError("Home Assistant area does not exist")
+        if (
+            floor_id is not None
+            and fr.async_get(self.hass).async_get_floor(floor_id) is None
+        ):
+            raise ValidationError("Home Assistant floor does not exist")
+        try:
+            task_source = TaskSource(source)
+        except ValueError as err:
+            raise ValidationError("Unsupported task source") from err
+        if task_source is TaskSource.ENTITY and not source_entity_id:
+            raise ValidationError("Entity tasks require source_entity_id")
+        clean_key = deduplication_key.strip() if deduplication_key else None
+        if clean_key is not None and len(clean_key) > 255:
+            raise ValidationError("deduplication_key must be at most 255 characters")
+        base_points = (
+            chore_type.default_race_points if race_points is None else race_points
+        )
+        total_points, points_multiplier = self._task_points(
+            base_points, floor_id
+        )
+        now = dt_util.utcnow()
+        return ChoreTask(
+            id=self._new_id(),
+            chore_type_id=chore_type_id,
+            area_id=area_id,
+            floor_id=floor_id,
+            date=task_date,
+            race_points=total_points,
+            preferred_participant_id=preferred_participant_id,
+            source=task_source,
+            source_entity_id=source_entity_id,
+            deduplication_key=clean_key,
+            chain_id=chain_id,
+            chain_step_id=chain_step_id,
+            blocked=blocked,
+            base_race_points=base_points,
+            points_multiplier=points_multiplier,
+            created_at=now,
+            updated_at=now,
+        )
+
+    def _fire_task_created(self, task: ChoreTask) -> None:
+        self.hass.bus.async_fire(
+            EVENT_TASK_CREATED,
+            {
+                "task_id": task.id,
+                "source": task.source.value,
+                "source_entity_id": task.source_entity_id,
+            },
+        )
+
+    async def async_ensure_task(
+        self,
+        chore_type_id: str,
+        task_date: date,
+        *,
+        source: TaskSource | str,
+        source_entity_id: str,
+        deduplication_key: str | None = None,
+        area_id: str | None = None,
+        floor_id: str | None = None,
+        race_points: int | None = None,
+        preferred_participant_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create an automation task once and return repeat calls idempotently."""
+        try:
+            task_source = TaskSource(source)
+        except ValueError as err:
+            raise ValidationError("Unsupported task source") from err
+        if task_source not in {TaskSource.ENTITY, TaskSource.AUTOMATION}:
+            raise ValidationError("ensure_task source must be entity or automation")
+        if not source_entity_id:
+            raise ValidationError("source_entity_id is required")
+        clean_key = deduplication_key.strip() if deduplication_key else None
+        if clean_key is None:
+            location = area_id or floor_id or "none"
+            clean_key = (
+                f"{task_source.value}:{source_entity_id}:{chore_type_id}:"
+                f"{task_date.isoformat()}:{location}"
+            )
+        async with self._mutation_lock:
+            existing = next(
+                (
+                    task
+                    for task in self._data.tasks.values()
+                    if task.deduplication_key == clean_key
+                ),
+                None,
+            )
+            if existing is not None:
+                return {"created": False, "task": existing.to_dict()}
+            task = self._build_task(
+                chore_type_id,
+                task_date,
+                area_id=area_id,
+                floor_id=floor_id,
+                race_points=race_points,
+                preferred_participant_id=preferred_participant_id,
+                source=task_source,
+                source_entity_id=source_entity_id,
+                deduplication_key=clean_key,
+                chain_id=None,
+                chain_step_id=None,
+                blocked=False,
+            )
+            self._data.tasks[task.id] = task
+            await self._async_commit()
+        self._fire_task_created(task)
+        return {"created": True, "task": task.to_dict()}
 
     async def async_create_recurrence_rule(
         self,
@@ -1392,6 +1501,16 @@ class ChoreRaceManager:
             for completion in self._data.completions.values()
         )
 
+    def automatic_tasks_today(self) -> int:
+        """Count tasks created today by entity or automation integrations."""
+        today = self.today()
+        return sum(
+            dt_util.as_local(task.created_at).date() == today
+            and task.source in {TaskSource.ENTITY, TaskSource.AUTOMATION}
+            and task.status is not TaskStatus.CANCELLED
+            for task in self._data.tasks.values()
+        )
+
     def completed_scheduled_tasks_today(self) -> int:
         """Count today's scheduled tasks that currently are completed."""
         today = self.today()
@@ -1476,6 +1595,7 @@ class ChoreRaceManager:
         return {
             "open_tasks_today": self.open_tasks_today(),
             "completed_tasks_today": completed,
+            "automatic_tasks_today": self.automatic_tasks_today(),
             "team_progress": {"completed": completed, "total": total_today},
             "points_today": self.points_today(),
             "points_week": self.points_week(),

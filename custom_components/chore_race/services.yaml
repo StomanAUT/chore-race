@@ -32,7 +32,7 @@ create_participant:
 
 create_recurrence_rule:
   name: Create recurrence rule
-  description: Schedule a chore every N days, monthly, or yearly.
+  description: Schedule a chore by calendar or since its last completion.
   fields:
     chore_type_id:
       required: true
@@ -48,8 +48,10 @@ create_recurrence_rule:
         select:
           options:
             - days
+            - weekdays
             - monthly
             - yearly
+            - completion_interval
     interval:
       default: 1
       selector:
@@ -57,6 +59,26 @@ create_recurrence_rule:
           min: 1
           max: 365
           mode: box
+    weekdays:
+      description: Monday 0 through Sunday 6; used with frequency weekdays.
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: 0
+            - label: Tuesday
+              value: 1
+            - label: Wednesday
+              value: 2
+            - label: Thursday
+              value: 3
+            - label: Friday
+              value: 4
+            - label: Saturday
+              value: 5
+            - label: Sunday
+              value: 6
     area_id:
       selector:
         area:
@@ -87,14 +109,36 @@ update_recurrence_rule:
         select:
           options:
             - days
+            - weekdays
             - monthly
             - yearly
+            - completion_interval
     interval:
       selector:
         number:
           min: 1
           max: 365
           mode: box
+    weekdays:
+      description: Monday 0 through Sunday 6; used with frequency weekdays.
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: 0
+            - label: Tuesday
+              value: 1
+            - label: Wednesday
+              value: 2
+            - label: Thursday
+              value: 3
+            - label: Friday
+              value: 4
+            - label: Saturday
+              value: 5
+            - label: Sunday
+              value: 6
     area_id:
       selector:
         area:
@@ -329,6 +373,52 @@ create_task:
     source_entity_id:
       selector:
         entity:
+
+ensure_task:
+  name: Ensure automation task
+  description: Create one idempotent task from an entity or automation trigger.
+  fields:
+    chore_type_id:
+      required: true
+      selector:
+        text:
+    date:
+      description: Defaults to today in Home Assistant's configured timezone.
+      selector:
+        date:
+    area_id:
+      selector:
+        area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
+    race_points:
+      description: Optional base points per room override.
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    preferred_participant_id:
+      selector:
+        text:
+    source:
+      default: automation
+      selector:
+        select:
+          options:
+            - automation
+            - entity
+    source_entity_id:
+      required: true
+      description: Entity that triggered or owns this task.
+      selector:
+        entity:
+    deduplication_key:
+      description: Optional stable event key; otherwise a daily key is derived.
+      selector:
+        text:
 
 update_task:
   name: Update task

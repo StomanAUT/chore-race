@@ -20,6 +20,9 @@
       "completed_today": {
         "name": "Heute erledigt"
       },
+      "automatic_tasks_today": {
+        "name": "Heute automatisch erstellt"
+      },
       "week_leader": {
         "name": "Wochenführung",
         "state": {

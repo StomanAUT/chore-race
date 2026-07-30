@@ -7,8 +7,9 @@ from types import SimpleNamespace
 import pytest
 
 from custom_components.chore_race import manager as manager_module
+from custom_components.chore_race.const import EVENT_TASK_CREATED
 from custom_components.chore_race.errors import ConflictError, ValidationError
-from custom_components.chore_race.models import ScoringMode, TaskStatus
+from custom_components.chore_race.models import ScoringMode, TaskSource, TaskStatus
 
 
 async def _base_records(manager):
@@ -49,6 +50,128 @@ async def test_task_snapshots_race_points(manager):
         chore_type.id, default_race_points=10
     )
     assert task.race_points == 5
+
+
+async def test_ensure_task_is_idempotent_for_derived_daily_key(manager):
+    """Repeated automation calls create one concrete task for the same day."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Waschmaschine", 3)
+
+    first = await manager.async_ensure_task(
+        chore_type.id,
+        manager.today(),
+        source=TaskSource.ENTITY,
+        source_entity_id="sensor.washing_machine_state",
+    )
+    repeated = await manager.async_ensure_task(
+        chore_type.id,
+        manager.today(),
+        source=TaskSource.ENTITY,
+        source_entity_id="sensor.washing_machine_state",
+    )
+
+    assert first["created"] is True
+    assert repeated["created"] is False
+    assert repeated["task"]["id"] == first["task"]["id"]
+    assert len(manager.data.tasks) == 1
+    assert manager.automatic_tasks_today() == 1
+
+
+async def test_ensure_task_is_atomic_for_concurrent_automation_calls(manager):
+    """Concurrent retries with one explicit event key cannot create duplicates."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Müll rausbringen", 2)
+
+    results = await asyncio.gather(
+        *(
+            manager.async_ensure_task(
+                chore_type.id,
+                manager.today(),
+                source=TaskSource.AUTOMATION,
+                source_entity_id="automation.bin_reminder",
+                deduplication_key="bin-reminder-2026-w31",
+            )
+            for _ in range(5)
+        )
+    )
+
+    assert sum(result["created"] for result in results) == 1
+    assert len({result["task"]["id"] for result in results}) == 1
+    assert len(manager.data.tasks) == 1
+
+
+async def test_ensure_task_fires_one_attributed_created_event(manager, hass):
+    """Only the first idempotent call announces a newly persisted task."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Geschirrspüler", 2)
+    events = []
+    remove_listener = hass.bus.async_listen(
+        EVENT_TASK_CREATED, lambda event: events.append(event.data)
+    )
+
+    try:
+        first = await manager.async_ensure_task(
+            chore_type.id,
+            manager.today(),
+            source=TaskSource.ENTITY,
+            source_entity_id="sensor.dishwasher_state",
+        )
+        await manager.async_ensure_task(
+            chore_type.id,
+            manager.today(),
+            source=TaskSource.ENTITY,
+            source_entity_id="sensor.dishwasher_state",
+        )
+        await hass.async_block_till_done()
+    finally:
+        remove_listener()
+
+    assert events == [
+        {
+            "task_id": first["task"]["id"],
+            "source": "entity",
+            "source_entity_id": "sensor.dishwasher_state",
+        }
+    ]
+
+
+async def test_ensure_task_key_can_distinguish_automation_events(manager):
+    """Explicit event keys allow several tasks from the same source and date."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Trockner ausräumen", 2)
+
+    first = await manager.async_ensure_task(
+        chore_type.id,
+        manager.today(),
+        source="automation",
+        source_entity_id="automation.dryer_finished",
+        deduplication_key="dryer-cycle-41",
+    )
+    second = await manager.async_ensure_task(
+        chore_type.id,
+        manager.today(),
+        source="automation",
+        source_entity_id="automation.dryer_finished",
+        deduplication_key="dryer-cycle-42",
+    )
+
+    assert first["created"] is True
+    assert second["created"] is True
+    assert first["task"]["id"] != second["task"]["id"]
+
+
+async def test_ensure_task_rejects_non_automatic_sources(manager):
+    """The idempotent helper is reserved for entity and automation sources."""
+    await manager.async_load()
+    chore_type = await manager.async_create_chore_type("Fenster öffnen", 1)
+
+    with pytest.raises(ValidationError, match="entity or automation"):
+        await manager.async_ensure_task(
+            chore_type.id,
+            manager.today(),
+            source=TaskSource.MANUAL,
+            source_entity_id="input_button.create_chore",
+        )
 
 
 async def test_open_task_can_be_edited_and_deleted(manager):

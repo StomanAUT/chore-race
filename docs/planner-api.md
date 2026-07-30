@@ -151,6 +151,60 @@ Chore types can be updated through `chore_race/update_chore_type`. Permanent
 deletion through `chore_race/delete_chore_type` is allowed only when no task or
 recurrence rule references the type; otherwise it must be deactivated.
 
+### Ensure a task from an automation or entity
+
+Home Assistant automations and entity integrations should call the
+`chore_race.ensure_task` action instead of `create_task`. It accepts the same
+location, participant and point fields, plus:
+
+- `source`: `automation` (default) or `entity`;
+- `source_entity_id`: required owner or triggering entity;
+- `deduplication_key`: optional stable identity for one external event.
+
+Without an explicit key, Chore Race derives one from source, source entity,
+chore type, task date and location. Repeating the action then returns the same
+task. An explicit key is preferable when multiple distinct events may occur on
+one day. The action response contains `created` and the complete `task` record.
+
+```yaml
+automation:
+  - alias: "Chore Race: Waschmaschine ist fertig"
+    triggers:
+      - trigger: state
+        entity_id: sensor.washing_machine_state
+        to: "finished"
+    actions:
+      - action: chore_race.ensure_task
+        response_variable: chore_race_result
+        data:
+          chore_type_id: "stable-type-id"
+          source: entity
+          source_entity_id: "{{ trigger.entity_id }}"
+          area_id: "utility_room"
+          deduplication_key: >-
+            {{ trigger.entity_id }}:{{ trigger.to_state.last_changed.isoformat() }}
+```
+
+If the automation is replayed for the same state change,
+`chore_race_result.created` is `false` and no duplicate is added. Omitting
+`date` schedules the task for today in Home Assistant's configured timezone.
+`area_id` and `floor_id` remain mutually exclusive.
+
+Every newly created task fires this Home Assistant event:
+
+```yaml
+event_type: chore_race_task_created
+data:
+  task_id: "stable-task-id"
+  source: entity
+  source_entity_id: sensor.washing_machine_state
+```
+
+An idempotent repeat call does not emit the event again. The
+`automatic_tasks_today` sensor and `chore_race/get_state` field report how many
+non-cancelled entity or automation tasks were created on the current local
+day.
+
 Recurring rules accept the same mutually exclusive `area_id` and `floor_id`
 fields. Every materialized task snapshots that assignment, so a rule such as
 “Boden wischen · Erdgeschoss · 1 Punkt pro Raum” produces one floor-wide task

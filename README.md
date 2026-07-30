@@ -1,10 +1,11 @@
 # Chore Race
 
 Chore Race is a local-first Home Assistant household planner that will grow
-into a family-friendly, gamified 30-minute chore race. Version 0.2.1 provides
-the planner foundation: participants linked to Home Assistant persons,
-reusable chore types, dated and recurring tasks, completions, undo, scoring
-history, aggregate sensors and planner and race cards.
+into a family-friendly, gamified 30-minute chore race. The current 0.7
+milestone adds idempotent automation and entity helpers to the planner
+foundation: participants linked to Home Assistant persons, reusable chore
+types, dated and recurring tasks, completions, undo, scoring history, aggregate
+sensors and planner and race cards.
 
 > Early development: storage schema and APIs may still change before 1.0.
 
@@ -54,6 +55,7 @@ context and remain supported.
 - `chore_race.update_chore_type`
 - `chore_race.delete_chore_type`
 - `chore_race.create_task`
+- `chore_race.ensure_task`
 - `chore_race.update_task`
 - `chore_race.create_recurrence_rule`
 - `chore_race.complete_task`
@@ -61,12 +63,15 @@ context and remain supported.
 - `chore_race.delete_task`
 
 Action calls can request response data to retrieve the generated stable IDs.
+`chore_race.ensure_task` is intended for automations and entity integrations:
+retries with the same deduplication key return the existing task instead of
+creating duplicates.
 
 ## Entities and API
 
-The integration exposes open tasks today, completed tasks today and current
-week leader as event-driven sensors. Large task collections are deliberately
-not placed in entity attributes.
+The integration exposes open tasks today, completed tasks today, automatically
+created tasks today and the current week leader as event-driven sensors. Large
+task collections are deliberately not placed in entity attributes.
 
 Authenticated read-only WebSocket commands:
 
@@ -130,7 +135,7 @@ run against a production configuration.
 2. 0.3 Race engine and race scoring
 3. 0.4 Child-friendly tablet card
 4. 0.5 Rewards
-5. 0.6 Recurring tasks (current development branch)
-6. 0.7 Automation/entity helpers
-7. 0.8 General task chains
+5. 0.6 Recurring tasks
+6. 0.7 Automation/entity helpers (current development branch)
+7. 0.8 General task chains (next)
 8. 1.0 Stable public family release

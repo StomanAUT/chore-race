@@ -78,9 +78,31 @@ operation is available for running, finished, and reset/ready sessions.
 - `completed_tasks_today()` counts completions by their completion timestamp.
 - `completed_scheduled_tasks_today()` counts completed tasks planned for today.
 - `open_tasks_today()` counts unblocked, open tasks planned for today.
+- `automatic_tasks_today()` counts non-cancelled entity and automation tasks by
+  their local creation date.
 
 The compact card state uses scheduled-task counts for plan progress and keeps
 completion-timestamp counts as a separate manager API.
+
+## Automation and entity task identity
+
+`ensure_task` is the idempotent boundary for tasks originating outside the
+planner. It accepts only the `entity` and `automation` task sources and always
+requires `source_entity_id`, so every generated task remains attributable to
+the Home Assistant entity or automation that requested it.
+
+Callers may supply a stable `deduplication_key` for one physical event. When it
+is omitted, the manager derives a daily key from source, source entity, chore
+type, task date and location. The lookup and creation share the manager's
+mutation lock, so concurrent retries cannot create duplicates. The action
+returns `created: true` with the new task or `created: false` with the
+previously stored task.
+
+A newly persisted task fires `chore_race_task_created` with `task_id`, `source`
+and `source_entity_id`. An idempotent retry does not fire a second event. The
+`automatic_tasks_today` sensor counts tasks whose source is `entity` or
+`automation` and whose `created_at` falls on the current local date; cancelled
+tasks are excluded.
 
 ## Task location scope
 

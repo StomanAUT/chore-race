@@ -26,6 +26,7 @@ from .const import (
     SERVICE_DELETE_CHORE_TYPE,
     SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_DELETE_TASK,
+    SERVICE_ENSURE_TASK,
     SERVICE_REMOVE_RACE_PARTICIPANT,
     SERVICE_RESET_RACE,
     SERVICE_START_RACE,
@@ -130,13 +131,34 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("blocked", default=False): cv.boolean,
     }
 )
+ENSURE_TASK_SCHEMA = vol.Schema(
+    {
+        vol.Required("chore_type_id"): _ID,
+        vol.Optional("date"): cv.date,
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
+        vol.Optional("race_points"): _POINTS,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional(
+            "source", default=TaskSource.AUTOMATION.value
+        ): vol.In([TaskSource.ENTITY.value, TaskSource.AUTOMATION.value]),
+        vol.Required("source_entity_id"): cv.entity_id,
+        vol.Optional("deduplication_key"): _OPTIONAL_TEXT,
+    }
+)
 CREATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
     {
         vol.Required("chore_type_id"): _ID,
         vol.Required("start_date"): cv.date,
-        vol.Required("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Required("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
         vol.Optional("interval", default=1): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=365)
+        ),
+        vol.Optional("weekdays", default=[]): vol.All(
+            [vol.All(vol.Coerce(int), vol.Range(min=0, max=6))],
+            vol.Length(max=7),
         ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
         vol.Optional("floor_id"): _OPTIONAL_TEXT,
@@ -160,9 +182,15 @@ UPDATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
         vol.Required("rule_id"): _ID,
         vol.Optional("chore_type_id"): _ID,
         vol.Optional("start_date"): cv.date,
-        vol.Optional("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Optional("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
         vol.Optional("interval"): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=365)
+        ),
+        vol.Optional("weekdays"): vol.All(
+            [vol.All(vol.Coerce(int), vol.Range(min=0, max=6))],
+            vol.Length(max=7),
         ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
         vol.Optional("floor_id"): _OPTIONAL_TEXT,
@@ -198,6 +226,7 @@ ADMIN_SERVICES = {
     SERVICE_UPDATE_CHORE_TYPE,
     SERVICE_DELETE_CHORE_TYPE,
     SERVICE_CREATE_TASK,
+    SERVICE_ENSURE_TASK,
     SERVICE_UPDATE_TASK,
     SERVICE_CREATE_RECURRENCE_RULE,
     SERVICE_UPDATE_RECURRENCE_RULE,
@@ -241,6 +270,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             elif call.service == SERVICE_CREATE_TASK:
                 task_date: date = values.pop("date")
                 result = await manager.async_create_task(
+                    task_date=task_date, **values
+                )
+            elif call.service == SERVICE_ENSURE_TASK:
+                task_date = values.pop("date", manager.today())
+                result = await manager.async_ensure_task(
                     task_date=task_date, **values
                 )
             elif call.service == SERVICE_UPDATE_TASK:
@@ -289,6 +323,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_UPDATE_CHORE_TYPE: UPDATE_CHORE_TYPE_SCHEMA,
         SERVICE_DELETE_CHORE_TYPE: DELETE_CHORE_TYPE_SCHEMA,
         SERVICE_CREATE_TASK: CREATE_TASK_SCHEMA,
+        SERVICE_ENSURE_TASK: ENSURE_TASK_SCHEMA,
         SERVICE_UPDATE_TASK: UPDATE_TASK_SCHEMA,
         SERVICE_CREATE_RECURRENCE_RULE: CREATE_RECURRENCE_RULE_SCHEMA,
         SERVICE_UPDATE_RECURRENCE_RULE: UPDATE_RECURRENCE_RULE_SCHEMA,

@@ -8,6 +8,7 @@ from custom_components.chore_race.models import (
     ChoreType,
     Reward,
     RewardSelection,
+    TaskSource,
 )
 
 
@@ -22,6 +23,9 @@ def test_round_trip_storage_data():
         race_points=5,
         created_at=now,
         updated_at=now,
+        source=TaskSource.AUTOMATION,
+        source_entity_id="automation.create_daily_chore",
+        deduplication_key="daily-chore-2026-07-28",
     )
     reward = Reward(id="reward", name="Filmabend")
     selection = RewardSelection(
@@ -42,4 +46,5 @@ def test_round_trip_storage_data():
 
     assert restored.to_dict() == original.to_dict()
     assert restored.tasks["task"].race_points == 5
+    assert restored.tasks["task"].deduplication_key == "daily-chore-2026-07-28"
     assert restored.reward_selections["selection"].selected_at == now
