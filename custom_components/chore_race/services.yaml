@@ -180,8 +180,8 @@ reset_race:
         text:
 
 remove_race_participant:
-  name: Remove race participant
-  description: Remove a participant only from one race and revert affected race completions.
+  name: Remove participant
+  description: Deactivate a participant globally and revert their affected completions in the selected race. Historical records remain stored.
   fields:
     participant_id:
       required: true

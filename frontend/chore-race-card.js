@@ -400,7 +400,7 @@
         reset_race:
           "Rennen wirklich zurücksetzen? Alle Wertungen dieses Rennens werden rückgängig gemacht und die Aufgaben wieder geöffnet.",
         remove_race_participant:
-          "Teilnehmer wirklich aus diesem Rennen entfernen? Bereits beteiligte Wertungen werden rückgängig gemacht und deren Aufgaben wieder geöffnet.",
+          "Teilnehmer wirklich entfernen? Die Person verschwindet auch aus dem Planer. Historische Rennen bleiben erhalten; Wertungen dieses Rennens werden rückgängig gemacht und deren Aufgaben wieder geöffnet.",
       };
       if (confirmations[action] && !window.confirm(confirmations[action])) return;
       this._actionBusy = true;
@@ -621,8 +621,8 @@
                         isAdmin && race.race_id
                           ? `<button class="remove-racer"
                               data-remove-race-participant="${escapeHtml(racer.participant_id)}"
-                              aria-label="${name} aus Rennen entfernen"
-                              title="Aus Rennen entfernen"
+                              aria-label="${name} als Teilnehmer entfernen"
+                              title="Teilnehmer entfernen"
                               ${this._actionBusy ? "disabled" : ""}>×</button>`
                           : ""
                       }</div>

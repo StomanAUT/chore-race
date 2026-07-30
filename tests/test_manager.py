@@ -36,6 +36,22 @@ async def test_participant_id_survives_rename_and_deactivate(manager):
     assert changed.active is False
 
 
+async def test_active_home_assistant_person_cannot_be_added_twice(manager):
+    """One HA person maps to at most one active participant."""
+    await manager.async_load()
+    await manager.async_create_participant(
+        "Arthur", person_entity_id="person.arthur"
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="Home Assistant person already exists",
+    ):
+        await manager.async_create_participant(
+            "Arthur doppelt", person_entity_id="person.arthur"
+        )
+
+
 async def test_chore_type_validates_points(manager):
     """Invalid point defaults are rejected."""
     await manager.async_load()
@@ -941,8 +957,10 @@ async def test_reset_current_race_restores_current_active_roster(manager):
     assert task.status is TaskStatus.OPEN
 
 
-async def test_remove_race_participant_is_local_and_reverts_their_roles(manager):
-    """Removing a racer preserves the person and unrelated race completions."""
+async def test_remove_race_participant_deactivates_and_reverts_their_roles(
+    manager,
+):
+    """Removing a racer deactivates them and preserves unrelated work."""
     driver, chore_type, driver_task = await _base_records(manager)
     removed = await manager.async_create_participant("Viktoria")
     unaffected = await manager.async_create_participant("Manuel")
@@ -978,7 +996,7 @@ async def test_remove_race_participant_is_local_and_reverts_their_roles(manager)
     assert removed.id not in {
         row["participant_id"] for row in state["leaderboard"]
     }
-    assert manager.data.participants[removed.id].active is True
+    assert manager.data.participants[removed.id].active is False
     assert removed_as_driver.active is False
     assert removed_as_copilot.active is False
     assert driver_task.status is TaskStatus.OPEN
@@ -1007,6 +1025,40 @@ async def test_ready_race_adds_new_participants_but_keeps_removals_excluded(mana
         newcomer.id
     ]
     assert original.id not in state["participant_ids"]
+
+
+async def test_readding_removed_ha_person_reactivates_stable_participant(
+    manager,
+):
+    """Re-adding an HA person restores their ID and ready-race visibility."""
+    await manager.async_load()
+    original = await manager.async_create_participant(
+        "Arthur",
+        person_entity_id="person.arthur",
+        avatar="/local/arthur-old.png",
+    )
+    race = await manager.async_start_race()
+    await manager.async_reset_race(race["race_id"])
+    await manager.async_remove_race_participant(
+        original.id, race["race_id"]
+    )
+
+    restored = await manager.async_create_participant(
+        "Arthur Neu",
+        person_entity_id="person.arthur",
+        avatar="/local/arthur-new.png",
+        role="adult",
+    )
+    state = manager.race_state(race["race_id"])
+
+    assert restored.id == original.id
+    assert restored.active is True
+    assert restored.name == "Arthur Neu"
+    assert restored.avatar == "/local/arthur-new.png"
+    assert restored.role == "adult"
+    assert len(manager.data.participants) == 1
+    assert state["participant_ids"] == [original.id]
+    assert state["leaderboard"][0]["participant_id"] == original.id
 
 
 async def test_legacy_ready_race_recovers_active_participants(manager):

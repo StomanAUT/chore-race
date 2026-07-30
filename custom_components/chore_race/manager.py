@@ -137,19 +137,48 @@ class ChoreRaceManager:
         role: str = "child",
         can_do_restricted_tasks: bool = False,
     ) -> Participant:
-        """Create an independently identified participant."""
+        """Create a participant or reactivate a matching HA person."""
         if role not in {"child", "adult"}:
             raise ValidationError("role must be child or adult")
-        participant = Participant(
-            id=self._new_id(),
-            name=self._validate_name(name),
-            person_entity_id=person_entity_id,
-            avatar=avatar,
-            sort_order=sort_order,
-            role=role,
-            can_do_restricted_tasks=can_do_restricted_tasks,
-        )
+        validated_name = self._validate_name(name)
         async with self._mutation_lock:
+            if person_entity_id:
+                matches = [
+                    item
+                    for item in self._data.participants.values()
+                    if item.person_entity_id == person_entity_id
+                ]
+                if any(item.active for item in matches):
+                    raise ValidationError(
+                        "Participant for Home Assistant person already exists"
+                    )
+                if matches:
+                    participant = matches[0]
+                    participant.name = validated_name
+                    participant.active = True
+                    participant.avatar = avatar
+                    participant.sort_order = sort_order
+                    participant.role = role
+                    participant.can_do_restricted_tasks = (
+                        can_do_restricted_tasks
+                    )
+                    for race in self._data.race_sessions.values():
+                        if RaceStatus(race["status"]) is not RaceStatus.READY:
+                            continue
+                        excluded = race.get("excluded_participant_ids", [])
+                        if participant.id in excluded:
+                            excluded.remove(participant.id)
+                    await self._async_commit()
+                    return participant
+            participant = Participant(
+                id=self._new_id(),
+                name=validated_name,
+                person_entity_id=person_entity_id,
+                avatar=avatar,
+                sort_order=sort_order,
+                role=role,
+                can_do_restricted_tasks=can_do_restricted_tasks,
+            )
             self._data.participants[participant.id] = participant
             await self._async_commit()
         return participant
@@ -1148,9 +1177,9 @@ class ChoreRaceManager:
         participant_id: str,
         race_id: str | None = None,
     ) -> dict[str, Any]:
-        """Remove one participant only from a race and rewind affected work."""
+        """Deactivate a participant and rewind their selected-race work."""
         async with self._mutation_lock:
-            self._require_participant(participant_id)
+            participant = self._require_participant(participant_id)
             race = self._require_race(race_id)
             visible_participant_ids = self._race_visible_participant_ids(race)
             if participant_id not in visible_participant_ids:
@@ -1165,6 +1194,7 @@ class ChoreRaceManager:
             reverted = self._revert_race_completions(
                 race["id"], now, participant_id
             )
+            participant.active = False
             await self._async_commit()
             state = self.race_state(race["id"], now=now)
             state["reverted_completions"] = reverted
@@ -1308,7 +1338,7 @@ class ChoreRaceManager:
                 "copilot_points": 0,
             }
             for participant in self._data.participants.values()
-            if participant.active and participant.id in participant_ids
+            if participant.id in participant_ids
         }
         for completion in self._data.completions.values():
             if not completion.active or completion.race_id != race_id:

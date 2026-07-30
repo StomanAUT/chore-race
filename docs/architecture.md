@@ -57,8 +57,12 @@ task during a running session. Expired sessions are presented as finished and
 are closed persistently when the next session starts.
 
 Each session snapshots `participant_ids` from the active household
-participants when it starts. This is a race-local roster: removing somebody
-from a race never deactivates or deletes their global participant record.
+participants when it starts. Removing somebody through the race card
+deactivates their global participant record, removes them from the selected
+race roster and rewinds affected work in that race. Historical participant
+records and other completed races remain stored for audit and scoring history.
+Selecting the same Home Assistant person in the planner later reactivates the
+existing stable participant record instead of creating a duplicate.
 
 Administrators may reset the current race or select a session by `race_id`. A
 reset keeps the session for audit, sets it back to `ready`, records `reset_at`,
