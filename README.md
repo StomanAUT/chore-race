@@ -1,11 +1,10 @@
 # Chore Race
 
-Chore Race is a local-first Home Assistant household planner that will grow
-into a family-friendly, gamified 30-minute chore race. The current 0.7
-milestone adds idempotent automation and entity helpers to the planner
-foundation: participants linked to Home Assistant persons, reusable chore
-types, dated and recurring tasks, completions, undo, scoring history, aggregate
-sensors and planner and race cards.
+Chore Race is a local-first Home Assistant household planner with a
+family-friendly, gamified 30-minute chore race. The current 0.8 foundation
+includes Home Assistant persons, areas and floors, reusable chore types,
+dated and recurring tasks, general task chains, completions, undo, scoring
+history, rewards, aggregate sensors, and responsive planner and race cards.
 
 > Early development: storage schema and APIs may still change before 1.0.
 
@@ -28,6 +27,10 @@ Devices & services → Add integration**. Configuration through
 The integration does not create household-specific seed data. Participants and
 chore types are created through Actions or the planner, so names, rooms and
 point values remain fully configurable.
+
+See [installation and upgrades](docs/installation.md),
+[configuration examples](docs/examples.md), and
+[troubleshooting](docs/troubleshooting.md) for the complete user guide.
 
 ## Core rules
 
@@ -136,6 +139,6 @@ run against a production configuration.
 3. 0.4 Child-friendly tablet card
 4. 0.5 Rewards
 5. 0.6 Recurring tasks
-6. 0.7 Automation/entity helpers (current development branch)
-7. 0.8 General task chains (next)
-8. 1.0 Stable public family release
+6. 0.7 Automation/entity helpers
+7. 0.8 General task chains
+8. 1.0 Stable public family release (current hardening)

@@ -12,6 +12,23 @@
       "single_instance_allowed": "Es ist nur eine Chore-Race-Instanz erlaubt."
     }
   },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Chore Race ist nicht eingerichtet oder geladen."
+    },
+    "not_found": {
+      "message": "Der referenzierte Chore-Race-Eintrag wurde nicht gefunden."
+    },
+    "conflict": {
+      "message": "Die Anfrage steht im Konflikt mit dem aktuellen Chore-Race-Status."
+    },
+    "validation_error": {
+      "message": "Die Anfrage verletzt eine Chore-Race-Regel."
+    },
+    "chore_race_error": {
+      "message": "Chore Race konnte die Anfrage nicht ausführen."
+    }
+  },
   "entity": {
     "sensor": {
       "open_tasks": {

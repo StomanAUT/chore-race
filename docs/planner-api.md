@@ -7,6 +7,34 @@ logic in JavaScript.
 Read commands are available to every authenticated Home Assistant connection.
 Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 
+## Permissions and errors
+
+All WebSocket commands require an authenticated Home Assistant connection.
+Planner writes and race lifecycle changes (`start`, `stop`, `reset`, participant
+removal) additionally require an administrator. Task completion and the
+champion's reward selection deliberately remain available to any authenticated
+household dashboard.
+
+Service calls from a user context follow the same split: every management
+action requires an administrator, while `chore_race.complete_task` is available
+to an authenticated household user. Calls without a user context are trusted
+Home Assistant automation/internal calls.
+
+Failures use stable machine-readable codes. Clients should branch on `code` and
+treat the human-readable message as display text:
+
+| Code | Meaning |
+| --- | --- |
+| `not_loaded` | The integration has no loaded config entry |
+| `not_found` | A referenced Chore Race record does not exist |
+| `conflict` | The request conflicts with current or historical state |
+| `validation_error` | The request violates a domain rule |
+| `chore_race_error` | Fallback for an otherwise unclassified domain failure |
+
+The same domain codes are exposed as Home Assistant service validation
+translation keys. Authentication/authorization failures continue to use Home
+Assistant's native unauthorized error contract.
+
 ## Read
 
 | Command | Result |

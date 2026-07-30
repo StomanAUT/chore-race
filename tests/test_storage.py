@@ -1,6 +1,9 @@
 """Storage adapter restart test."""
 
+import copy
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from custom_components.chore_race.models import (
     ChoreRaceData,
@@ -94,3 +97,45 @@ async def test_save_writes_canonical_task_chain_shape(hass):
         "order": 0,
         "unlock_after_step_ids": [],
     }
+
+
+def test_migrate_normalizes_missing_v1_collections_without_mutating_input():
+    """Early v1 snapshots gain additive collections on a detached root."""
+    raw = {"participants": {"julia": {"id": "julia", "name": "Julia"}}}
+    original = copy.deepcopy(raw)
+
+    migrated = ChoreRaceStore._migrate(raw)
+
+    assert raw == original
+    assert migrated is not raw
+    assert migrated["schema_version"] == 1
+    assert migrated["task_chains"] == {}
+    assert migrated["reward_selections"] == {}
+    assert migrated["settings"] == {}
+
+
+@pytest.mark.parametrize("version", [0, 2, True, "1", 1.0])
+def test_migrate_rejects_unsupported_or_invalid_schema_versions(version):
+    """Only the explicitly supported logical schema is accepted."""
+    with pytest.raises(ValueError, match="schema version"):
+        ChoreRaceStore._migrate({"schema_version": version})
+
+
+def test_migrate_rejects_non_dictionary_root():
+    """A corrupt root fails before model restoration."""
+    with pytest.raises(ValueError, match="root must be a dictionary"):
+        ChoreRaceStore._migrate([])  # type: ignore[arg-type]
+
+
+async def test_save_rejects_unsupported_logical_schema(hass):
+    """Unsupported snapshots are never persisted over recoverable data."""
+    backend = AsyncMock()
+    with patch(
+        "custom_components.chore_race.storage.Store", return_value=backend
+    ):
+        store = ChoreRaceStore(hass)
+
+        with pytest.raises(ValueError, match="Cannot save unsupported"):
+            await store.async_save(ChoreRaceData(schema_version=2))
+
+    backend.async_save.assert_not_awaited()

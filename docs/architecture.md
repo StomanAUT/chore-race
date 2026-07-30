@@ -171,3 +171,19 @@ embedded IDs, list-based step collections and the former singular
 representation. Definitions are separate from concrete `ChoreTask` snapshots;
 tasks continue to carry `chain_id`, `chain_step_id` and `blocked` so later
 definition edits cannot rewrite historical work.
+
+## Storage compatibility
+
+Home Assistant's `Store` envelope version and Chore Race's logical
+`schema_version` are deliberately independent. Logical schema `1` has evolved
+only through additive fields and collections. Missing additive collections are
+initialized during load, and dataclass defaults restore fields that did not
+exist in early snapshots. For keyed model collections, the dictionary key is
+the stable identity and may fill an embedded `id` omitted by a legacy record.
+
+Migration never mutates the raw object returned by Home Assistant. A subsequent
+regular save writes the canonical current representation. Corrupt container
+types, non-string or unstable keys, conflicting embedded IDs, duplicate chain
+step IDs, and unknown logical schema versions are rejected before persistence
+with a path-specific error. Saving an unsupported logical schema is also
+blocked so recoverable on-disk data is not overwritten.

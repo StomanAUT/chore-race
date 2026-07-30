@@ -194,3 +194,79 @@ def test_task_chain_step_rejects_unstable_id():
             chore_type_id="hang-laundry",
             order=0,
         )
+
+
+def test_legacy_keyed_record_without_embedded_id_is_restored():
+    """The stable dictionary key fills an ID omitted by early snapshots."""
+    restored = ChoreRaceData.from_dict(
+        {"participants": {"julia": {"name": "Julia"}}}
+    )
+
+    assert restored.participants["julia"].id == "julia"
+    assert restored.to_dict()["participants"]["julia"]["id"] == "julia"
+
+
+def test_conflicting_embedded_record_id_is_rejected():
+    """A dictionary key cannot silently disagree with persisted identity."""
+    with pytest.raises(ValueError, match="conflicting embedded ID"):
+        ChoreRaceData.from_dict(
+            {
+                "participants": {
+                    "julia": {"id": "someone-else", "name": "Julia"}
+                }
+            }
+        )
+
+
+@pytest.mark.parametrize(
+    ("snapshot", "message"),
+    [
+        ({"participants": []}, "participants must be a dictionary"),
+        (
+            {"participants": {"julia": "not-a-record"}},
+            "participants record 'julia' must be a dictionary",
+        ),
+        (
+            {"race_sessions": {"race": []}},
+            "race_sessions record 'race' must be a dictionary",
+        ),
+        ({"settings": []}, "settings must be a dictionary"),
+    ],
+)
+def test_malformed_storage_containers_are_rejected(snapshot, message):
+    """Damaged collections fail with an actionable storage path."""
+    with pytest.raises(ValueError, match=message):
+        ChoreRaceData.from_dict(snapshot)
+
+
+def test_duplicate_legacy_task_chain_step_ids_are_rejected():
+    """List-based legacy chains cannot silently overwrite a prior step."""
+    with pytest.raises(ValueError, match="must be unique"):
+        ChoreRaceData.from_dict(
+            {
+                "task_chains": {
+                    "laundry": {
+                        "name": "Laundry",
+                        "steps": [
+                            {"id": "wash", "chore_type_id": "wash"},
+                            {"id": "wash", "chore_type_id": "dry"},
+                        ],
+                    }
+                }
+            }
+        )
+
+
+def test_malformed_legacy_task_chain_step_is_rejected_cleanly():
+    """A damaged list step reports its storage shape instead of crashing."""
+    with pytest.raises(ValueError, match="step must be a dictionary"):
+        ChoreRaceData.from_dict(
+            {
+                "task_chains": {
+                    "laundry": {
+                        "name": "Laundry",
+                        "steps": ["not-a-step"],
+                    }
+                }
+            }
+        )
