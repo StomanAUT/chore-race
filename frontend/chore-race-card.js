@@ -540,11 +540,21 @@
     _render() {
       if (!this.shadowRoot) return;
       const state = this._data?.state ?? DEMO_DATA.state;
-      const racers = this._data?.leaderboard ?? [];
       const race = this._data?.raceState ?? { status: "demo" };
       const status = ["ready", "running", "finished", "legacy"].includes(race.status)
         ? race.status
         : "ready";
+      const receivedLeaderboard = this._data?.leaderboard ?? [];
+      const racers =
+        status === "ready" && !race.race_id && receivedLeaderboard.length === 0
+          ? this._participants.map((participant) => ({
+              participant_id: participant.id,
+              name: participant.name,
+              avatar: participant.avatar,
+              points: 0,
+              rank: 1,
+            }))
+          : receivedLeaderboard;
       const statusCopy = {
         ready: {
           eyebrow: "RENNEN BEREIT",

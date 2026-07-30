@@ -1031,6 +1031,7 @@ class ChoreRaceManager:
                     for participant in self._data.participants.values()
                     if participant.active
                 ],
+                "excluded_participant_ids": [],
                 "started_at": now.isoformat(),
                 "ends_at": (
                     now
@@ -1066,6 +1067,21 @@ class ChoreRaceManager:
                 if participant.active
             ]
         return race["participant_ids"]
+
+    def _race_visible_participant_ids(self, race: dict[str, Any]) -> list[str]:
+        """Include new participants in a ready race without restoring removals."""
+        participant_ids = list(self._race_participant_ids(race))
+        if race.get("status") != RaceStatus.READY:
+            return participant_ids
+        excluded = set(race.get("excluded_participant_ids", []))
+        for participant in self._data.participants.values():
+            if (
+                participant.active
+                and participant.id not in excluded
+                and participant.id not in participant_ids
+            ):
+                participant_ids.append(participant.id)
+        return participant_ids
 
     def _require_race(self, race_id: str | None = None) -> dict[str, Any]:
         race = self._data.race_sessions.get(race_id) if race_id else None
@@ -1117,6 +1133,7 @@ class ChoreRaceManager:
                         for participant in self._data.participants.values()
                         if participant.active
                     ],
+                    "excluded_participant_ids": [],
                     "finished_at": None,
                     "reset_at": now.isoformat(),
                 }
@@ -1135,11 +1152,16 @@ class ChoreRaceManager:
         async with self._mutation_lock:
             self._require_participant(participant_id)
             race = self._require_race(race_id)
-            participant_ids = self._race_participant_ids(race)
-            if participant_id not in participant_ids:
+            visible_participant_ids = self._race_visible_participant_ids(race)
+            if participant_id not in visible_participant_ids:
                 raise NotFoundError("Participant is not in this race")
+            participant_ids = self._race_participant_ids(race)
             now = dt_util.utcnow()
-            participant_ids.remove(participant_id)
+            if participant_id in participant_ids:
+                participant_ids.remove(participant_id)
+            excluded = race.setdefault("excluded_participant_ids", [])
+            if participant_id not in excluded:
+                excluded.append(participant_id)
             reverted = self._revert_race_completions(
                 race["id"], now, participant_id
             )
@@ -1261,7 +1283,7 @@ class ChoreRaceManager:
             "reset_at": race.get("reset_at"),
             "remaining_seconds": remaining,
             "leaderboard": leaderboard,
-            "participant_ids": list(self._race_participant_ids(race)),
+            "participant_ids": self._race_visible_participant_ids(race),
             "champion": champion,
             "rewards": self.rewards_snapshot(),
             "reward_selection": self._reward_selection_for_race(race["id"]),
@@ -1274,7 +1296,7 @@ class ChoreRaceManager:
     def _race_leaderboard(self, race_id: str) -> list[dict[str, Any]]:
         """Return exact session totals and an auditable bonus breakdown."""
         race = self._data.race_sessions[race_id]
-        participant_ids = set(self._race_participant_ids(race))
+        participant_ids = set(self._race_visible_participant_ids(race))
         rows: dict[str, dict[str, Any]] = {
             participant.id: {
                 "participant_id": participant.id,

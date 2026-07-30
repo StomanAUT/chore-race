@@ -987,3 +987,38 @@ async def test_remove_race_participant_is_local_and_reverts_their_roles(manager)
     assert unaffected_task.status is TaskStatus.COMPLETED
     assert state["leaderboard"][0]["participant_id"] == unaffected.id
     assert state["leaderboard"][0]["points"] == unaffected_task.race_points
+
+
+async def test_ready_race_adds_new_participants_but_keeps_removals_excluded(manager):
+    """A new planner participant joins the lineup without restoring removals."""
+    original, _, _ = await _base_records(manager)
+    race = await manager.async_start_race()
+    await manager.async_reset_race(race["race_id"])
+    removed = await manager.async_remove_race_participant(
+        original.id, race["race_id"]
+    )
+
+    assert removed["participant_ids"] == []
+    newcomer = await manager.async_create_participant("Julia")
+    state = manager.race_state(race["race_id"])
+
+    assert state["participant_ids"] == [newcomer.id]
+    assert [row["participant_id"] for row in state["leaderboard"]] == [
+        newcomer.id
+    ]
+    assert original.id not in state["participant_ids"]
+
+
+async def test_legacy_ready_race_recovers_active_participants(manager):
+    """Ready sessions created before exclusion tracking gain active people."""
+    participant, _, _ = await _base_records(manager)
+    race = await manager.async_start_race()
+    await manager.async_reset_race(race["race_id"])
+    stored = manager.data.race_sessions[race["race_id"]]
+    stored["participant_ids"] = []
+    stored.pop("excluded_participant_ids")
+
+    state = manager.race_state(race["race_id"])
+
+    assert state["participant_ids"] == [participant.id]
+    assert state["leaderboard"][0]["participant_id"] == participant.id
