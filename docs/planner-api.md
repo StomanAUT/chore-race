@@ -171,10 +171,10 @@ against Home Assistant's registries and rejects requests containing both.
 Changing an open task's location or base `race_points` recalculates its
 snapshotted total. A floor without assigned rooms is rejected.
 
-Only untouched open tasks can be updated or deleted. Tasks with completion
-history remain immutable, including after an undo. Untouched open tasks remain
-editable during a running race, and the live race queue reflects changes
-immediately.
+Open tasks can be updated or deleted when they have no active completion.
+Reverted completion records remain as immutable audit entries but no longer
+lock the reopened task. Open tasks remain editable during a running race, and
+the live race queue reflects changes immediately.
 
 Chore types can be updated through `chore_race/update_chore_type`. Permanent
 deletion through `chore_race/delete_chore_type` is allowed only when no task or

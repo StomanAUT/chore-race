@@ -313,13 +313,22 @@
           localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
           const day = localDate.toISOString().slice(0, 10);
           const todayTasks = tasks.filter((task) => task.date === day);
+          const overdueOpen = tasks.filter(
+            (task) => task.date < day && task.status === "open" && !task.blocked,
+          ).length;
           const completed = todayTasks.filter(
             (task) => task.status === "completed",
           ).length;
+          const openToday = todayTasks.filter(
+            (task) => task.status === "open" && !task.blocked,
+          ).length;
           state = {
-            open_tasks_today: todayTasks.length - completed,
+            open_tasks_today: overdueOpen + openToday,
             completed_tasks_today: completed,
-            team_progress: { completed, total: todayTasks.length },
+            team_progress: {
+              completed,
+              total: todayTasks.length + overdueOpen,
+            },
           };
         }
         if (!this._connected || generation !== this._requestGeneration) return;

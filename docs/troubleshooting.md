@@ -32,9 +32,10 @@ an empty first byte causes the `line 1 column 1` error.
 
 ## A task cannot be edited or deleted
 
-Tasks and task chains with completion history are intentionally immutable.
-Undo preserves an audit record, so it does not make the record deletable.
-Create a corrected task or chain and deactivate the old definition.
+Completed tasks and tasks with an active completion are intentionally
+immutable. After a completion is reverted, the reopened standalone task can be
+edited or deleted; the inactive completion remains in the audit history. Task
+chains retain their stricter history protection.
 
 ## Where to report a bug
 

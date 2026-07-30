@@ -81,7 +81,9 @@ operation is available for running, finished, and reset/ready sessions.
 
 - `completed_tasks_today()` counts completions by their completion timestamp.
 - `completed_scheduled_tasks_today()` counts completed tasks planned for today.
-- `open_tasks_today()` counts unblocked, open tasks planned for today.
+- `open_tasks_today()` counts unblocked, open tasks due today or earlier. An
+  unfinished task therefore remains actionable on following days until it is
+  completed, rescheduled, blocked, or deleted.
 - `automatic_tasks_today()` counts non-cancelled entity and automation tasks by
   their local creation date.
 
