@@ -33,6 +33,8 @@ from .models import (
     RewardSelection,
     ScoringMode,
     Settings,
+    TaskChain,
+    TaskChainStep,
     TaskSource,
     TaskStatus,
 )
@@ -503,6 +505,352 @@ class ChoreRaceManager:
             await self._async_commit()
         self._fire_task_created(task)
         return task
+
+    async def async_create_task_chain(
+        self,
+        name: str,
+        task_date: date,
+        steps: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Create a validated chain and atomically materialize its root steps."""
+        if not isinstance(task_date, date):
+            raise ValidationError("task_date must be a date")
+        chain_id = self._new_id()
+        normalized_steps = self._validate_chain_steps(steps)
+        try:
+            chain = TaskChain(
+                id=chain_id,
+                name=self._validate_name(name),
+                steps={
+                    step["id"]: TaskChainStep(
+                        id=step["id"],
+                        chain_id=chain_id,
+                        chore_type_id=step["chore_type_id"],
+                        order=index,
+                        unlock_after_step_ids=step["depends_on"],
+                    )
+                    for index, step in enumerate(normalized_steps)
+                },
+            )
+        except ValueError as err:
+            raise ValidationError(str(err)) from err
+        async with self._mutation_lock:
+            self._data.task_chains[chain_id] = chain
+            created = self._reconcile_task_chain(
+                chain, dt_util.utcnow(), task_date=task_date
+            )
+            await self._async_commit()
+            snapshot = self._task_chain_snapshot(chain)
+        for task in created:
+            self._fire_task_created(task)
+        return snapshot
+
+    async def async_materialize_task_chain(
+        self, chain_id: str
+    ) -> dict[str, Any]:
+        """Idempotently materialize every newly-ready step in a chain."""
+        async with self._mutation_lock:
+            chain = self._data.task_chains.get(chain_id)
+            if chain is None:
+                raise NotFoundError("Task chain not found")
+            created = self._reconcile_task_chain(chain, dt_util.utcnow())
+            if created:
+                await self._async_commit()
+            snapshot = self._task_chain_snapshot(chain)
+        for task in created:
+            self._fire_task_created(task)
+        return snapshot
+
+    async def async_update_task_chain(
+        self,
+        chain_id: str,
+        *,
+        name: str | None = None,
+        active: bool | None = None,
+        steps: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Update an unused chain definition and rematerialize its roots."""
+        async with self._mutation_lock:
+            chain = self._data.task_chains.get(chain_id)
+            if chain is None:
+                raise NotFoundError("Task chain not found")
+            chain_tasks = [
+                task
+                for task in self._data.tasks.values()
+                if task.chain_id == chain_id
+            ]
+            chain_task_ids = {task.id for task in chain_tasks}
+            if any(
+                completion.task_id in chain_task_ids
+                for completion in self._data.completions.values()
+            ):
+                raise ConflictError(
+                    "A task chain with completion history cannot be edited"
+                )
+            task_date = min(
+                (task.date for task in chain_tasks),
+                default=self.today(),
+            )
+            if steps is None:
+                updated_steps = chain.steps
+            else:
+                normalized_steps = self._validate_chain_steps(steps)
+                try:
+                    updated_steps = {
+                        step["id"]: TaskChainStep(
+                            id=step["id"],
+                            chain_id=chain_id,
+                            chore_type_id=step["chore_type_id"],
+                            order=index,
+                            unlock_after_step_ids=step["depends_on"],
+                        )
+                        for index, step in enumerate(normalized_steps)
+                    }
+                except ValueError as err:
+                    raise ValidationError(str(err)) from err
+            try:
+                updated = TaskChain(
+                    id=chain_id,
+                    name=chain.name if name is None else self._validate_name(name),
+                    steps=updated_steps,
+                    active=chain.active if active is None else active,
+                )
+            except ValueError as err:
+                raise ValidationError(str(err)) from err
+            for task in chain_tasks:
+                self._data.tasks.pop(task.id, None)
+            self._data.task_chains[chain_id] = updated
+            created = self._reconcile_task_chain(
+                updated,
+                dt_util.utcnow(),
+                task_date=task_date,
+            )
+            await self._async_commit()
+            snapshot = self._task_chain_snapshot(updated)
+        for task in created:
+            self._fire_task_created(task)
+        return snapshot
+
+    async def async_delete_task_chain(self, chain_id: str) -> None:
+        """Delete an unused chain and its untouched materialized tasks."""
+        async with self._mutation_lock:
+            if chain_id not in self._data.task_chains:
+                raise NotFoundError("Task chain not found")
+            chain_task_ids = {
+                task.id
+                for task in self._data.tasks.values()
+                if task.chain_id == chain_id
+            }
+            if any(
+                completion.task_id in chain_task_ids
+                for completion in self._data.completions.values()
+            ):
+                raise ConflictError(
+                    "A task chain with completion history cannot be deleted"
+                )
+            for task_id in chain_task_ids:
+                self._data.tasks.pop(task_id, None)
+            self._data.task_chains.pop(chain_id)
+            await self._async_commit()
+
+    def task_chains_snapshot(self) -> list[dict[str, Any]]:
+        """Return all chain definitions with their materialized task state."""
+        return [
+            self._task_chain_snapshot(chain)
+            for chain in sorted(
+                self._data.task_chains.values(),
+                key=lambda item: item.name.casefold(),
+            )
+        ]
+
+    def _validate_chain_steps(
+        self, steps: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Validate and normalize one acyclic task-chain definition."""
+        if not isinstance(steps, list) or not steps:
+            raise ValidationError("Task chain requires at least one step")
+        normalized: list[dict[str, Any]] = []
+        step_ids: set[str] = set()
+        allowed = {
+            "id",
+            "chore_type_id",
+            "depends_on",
+            "unlock_after_step_ids",
+            "sort_order",
+        }
+        for raw_step in steps:
+            if not isinstance(raw_step, dict):
+                raise ValidationError("Task chain steps must be objects")
+            if unknown := set(raw_step) - allowed:
+                raise ValidationError(
+                    f"Unknown task chain step fields: {sorted(unknown)}"
+                )
+            step_id = str(raw_step.get("id", "")).strip()
+            if not step_id:
+                raise ValidationError("Task chain step id must not be empty")
+            if step_id in step_ids:
+                raise ValidationError("Task chain step ids must be unique")
+            step_ids.add(step_id)
+            chore_type_id = raw_step.get("chore_type_id")
+            if chore_type_id not in self._data.chore_types:
+                raise NotFoundError("Chore type not found")
+            if (
+                "depends_on" in raw_step
+                and "unlock_after_step_ids" in raw_step
+            ):
+                raise ValidationError(
+                    "Use only unlock_after_step_ids for dependencies"
+                )
+            dependencies = raw_step.get(
+                "unlock_after_step_ids", raw_step.get("depends_on", [])
+            )
+            if not isinstance(dependencies, list) or any(
+                not isinstance(item, str) or not item.strip()
+                for item in dependencies
+            ):
+                raise ValidationError("depends_on must contain step ids")
+            if len(set(dependencies)) != len(dependencies):
+                raise ValidationError("depends_on must not contain duplicates")
+            normalized.append(
+                {
+                    "id": step_id,
+                    "chore_type_id": chore_type_id,
+                    "depends_on": list(dict.fromkeys(dependencies)),
+                }
+            )
+        for step in normalized:
+            unknown_dependencies = set(step["depends_on"]) - step_ids
+            if unknown_dependencies:
+                raise ValidationError(
+                    "Task chain dependency does not exist: "
+                    f"{sorted(unknown_dependencies)}"
+                )
+            if step["id"] in step["depends_on"]:
+                raise ValidationError("Task chain step cannot depend on itself")
+
+        dependencies_by_id = {
+            step["id"]: step["depends_on"] for step in normalized
+        }
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(step_id: str) -> None:
+            if step_id in visiting:
+                raise ValidationError("Task chain must not contain cycles")
+            if step_id in visited:
+                return
+            visiting.add(step_id)
+            for dependency_id in dependencies_by_id[step_id]:
+                visit(dependency_id)
+            visiting.remove(step_id)
+            visited.add(step_id)
+
+        for step_id in dependencies_by_id:
+            visit(step_id)
+        return normalized
+
+    def _chain_task(
+        self, chain_id: str, step_id: str
+    ) -> ChoreTask | None:
+        """Return the unique materialized task for one chain step."""
+        return next(
+            (
+                task
+                for task in self._data.tasks.values()
+                if task.chain_id == chain_id and task.chain_step_id == step_id
+            ),
+            None,
+        )
+
+    def _chain_step_completed(self, chain_id: str, step_id: str) -> bool:
+        task = self._chain_task(chain_id, step_id)
+        return (
+            task is not None
+            and task.status is TaskStatus.COMPLETED
+            and self._active_completion_for_task(task.id) is not None
+        )
+
+    def _reconcile_task_chain(
+        self,
+        chain: TaskChain,
+        now: datetime,
+        *,
+        task_date: date | None = None,
+    ) -> list[ChoreTask]:
+        """Reconcile materialization and blocking while holding the lock."""
+        if not chain.active:
+            return []
+        chain_id = chain.id
+        if task_date is None:
+            task_date = next(
+                (
+                    task.date
+                    for task in self._data.tasks.values()
+                    if task.chain_id == chain_id
+                ),
+                self.today(),
+            )
+        created: list[ChoreTask] = []
+        for step in sorted(chain.steps.values(), key=lambda item: item.order):
+            dependencies = step.unlock_after_step_ids
+            ready = all(
+                self._chain_step_completed(chain_id, dependency_id)
+                for dependency_id in dependencies
+            )
+            task = self._chain_task(chain_id, step.id)
+            if task is None:
+                started = any(
+                    self._chain_step_completed(chain_id, dependency_id)
+                    for dependency_id in dependencies
+                )
+                if dependencies and not (ready or started):
+                    continue
+                task = self._build_task(
+                    step.chore_type_id,
+                    task_date,
+                    area_id=None,
+                    floor_id=None,
+                    race_points=None,
+                    preferred_participant_id=None,
+                    source=TaskSource.CHAIN,
+                    source_entity_id=f"chain:{chain_id}",
+                    deduplication_key=f"chain:{chain_id}:{step.id}",
+                    chain_id=chain_id,
+                    chain_step_id=step.id,
+                    blocked=bool(dependencies) and not ready,
+                )
+                self._data.tasks[task.id] = task
+                created.append(task)
+            elif dependencies and not ready:
+                if completion := self._active_completion_for_task(task.id):
+                    completion.reverted_at = now
+                    task.status = TaskStatus.OPEN
+                if task.status is TaskStatus.OPEN:
+                    task.blocked = True
+                    task.updated_at = now
+            elif task.status is TaskStatus.OPEN:
+                task.blocked = bool(dependencies) and not ready
+                task.updated_at = now
+        return created
+
+    def _reconcile_all_task_chains(self, now: datetime) -> list[ChoreTask]:
+        """Reconcile all chains after an operation changes completion state."""
+        created: list[ChoreTask] = []
+        for chain in self._data.task_chains.values():
+            created.extend(self._reconcile_task_chain(chain, now))
+        return created
+
+    def _task_chain_snapshot(self, chain: TaskChain) -> dict[str, Any]:
+        """Return a chain definition with its materialized task snapshots."""
+        tasks = sorted(
+            (
+                task.to_dict()
+                for task in self._data.tasks.values()
+                if task.chain_id == chain.id
+            ),
+            key=lambda item: item["created_at"],
+        )
+        return {**chain.to_dict(), "tasks": tasks}
 
     def _build_task(
         self,
@@ -1018,6 +1366,7 @@ class ChoreRaceManager:
             task.status = TaskStatus.COMPLETED
             task.updated_at = now
             self._data.completions[completion.id] = completion
+            created = self._reconcile_all_task_chains(now)
             await self._async_commit()
             self.hass.bus.async_fire(
                 EVENT_TASK_COMPLETED,
@@ -1033,6 +1382,8 @@ class ChoreRaceManager:
                     "race_id": completion.race_id,
                 },
             )
+            for created_task in created:
+                self._fire_task_created(created_task)
             return completion
 
     def _race_driver_completion_count(
@@ -1172,6 +1523,7 @@ class ChoreRaceManager:
             race = self._require_race(race_id)
             now = dt_util.utcnow()
             reverted = self._revert_race_completions(race["id"], now)
+            created = self._reconcile_all_task_chains(now)
             race.update(
                 {
                     "status": RaceStatus.READY.value,
@@ -1188,6 +1540,8 @@ class ChoreRaceManager:
             await self._async_commit()
             state = self.race_state(race["id"], now=now)
             state["reverted_completions"] = reverted
+            for task in created:
+                self._fire_task_created(task)
             return state
 
     async def async_remove_race_participant(
@@ -1212,10 +1566,13 @@ class ChoreRaceManager:
             reverted = self._revert_race_completions(
                 race["id"], now, participant_id
             )
+            created = self._reconcile_all_task_chains(now)
             participant.active = False
             await self._async_commit()
             state = self.race_state(race["id"], now=now)
             state["reverted_completions"] = reverted
+            for task in created:
+                self._fire_task_created(task)
             return state
 
     def rewards_snapshot(
@@ -1504,11 +1861,14 @@ class ChoreRaceManager:
             completion.reverted_at = now
             task.status = TaskStatus.OPEN
             task.updated_at = now
+            created = self._reconcile_all_task_chains(now)
             await self._async_commit()
             self.hass.bus.async_fire(
                 EVENT_TASK_REOPENED,
                 {"task_id": task.id, "completion_id": completion.id},
             )
+            for created_task in created:
+                self._fire_task_created(created_task)
             return completion
 
     def _require_participant(self, participant_id: str) -> Participant:
@@ -1525,6 +1885,8 @@ class ChoreRaceManager:
 
     def _ensure_task_mutable(self, task: ChoreTask) -> None:
         """Reject edits that could rewrite completion history."""
+        if task.chain_id is not None:
+            raise ConflictError("Task chain steps are managed by their chain")
         if task.status is not TaskStatus.OPEN:
             raise ConflictError("Only open tasks can be changed")
         if any(
@@ -1672,4 +2034,11 @@ class ChoreRaceManager:
             "race_points_week": self.race_points_week(),
             "normal_points_week": self.normal_points_week(),
             "week_leader_id": leader.id if leader else None,
+            "task_chains": [
+                chain.to_dict()
+                for chain in sorted(
+                    self._data.task_chains.values(),
+                    key=lambda item: item.name.casefold(),
+                )
+            ],
         }

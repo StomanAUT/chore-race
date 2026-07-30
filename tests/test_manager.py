@@ -190,6 +190,274 @@ async def test_ensure_task_rejects_non_automatic_sources(manager):
         )
 
 
+async def _chain_records(manager):
+    await manager.async_load()
+    participant = await manager.async_create_participant("Arthur")
+    first = await manager.async_create_chore_type("Wäsche sammeln", 1)
+    second = await manager.async_create_chore_type("Waschmaschine starten", 2)
+    third = await manager.async_create_chore_type("Wäsche aufhängen", 3)
+    return participant, first, second, third
+
+
+async def test_task_chain_rejects_cycles_before_persisting(manager):
+    """A cyclic dependency graph never reaches persistent state."""
+    _, first, second, _ = await _chain_records(manager)
+
+    with pytest.raises(ValidationError, match="cycles"):
+        await manager.async_create_task_chain(
+            "Wäsche",
+            manager.today(),
+            [
+                {
+                    "id": "collect",
+                    "chore_type_id": first.id,
+                    "depends_on": ["wash"],
+                },
+                {
+                    "id": "wash",
+                    "chore_type_id": second.id,
+                    "depends_on": ["collect"],
+                },
+            ],
+        )
+
+    assert manager.data.task_chains == {}
+    assert manager.data.tasks == {}
+
+
+async def test_task_chain_materializes_ready_steps_once(manager):
+    """Completion unlocks one successor and reconciliation stays idempotent."""
+    participant, first, second, _ = await _chain_records(manager)
+    chain = await manager.async_create_task_chain(
+        "Wäsche",
+        manager.today(),
+        [
+            {"id": "collect", "chore_type_id": first.id},
+            {
+                "id": "wash",
+                "chore_type_id": second.id,
+                "depends_on": ["collect"],
+            },
+        ],
+    )
+    assert [task["chain_step_id"] for task in chain["tasks"]] == ["collect"]
+    root = next(iter(manager.data.tasks.values()))
+
+    await manager.async_complete_task(root.id, participant.id)
+    successor = next(
+        task
+        for task in manager.data.tasks.values()
+        if task.chain_step_id == "wash"
+    )
+    assert successor.blocked is False
+
+    results = await asyncio.gather(
+        *(
+            manager.async_materialize_task_chain(chain["id"])
+            for _ in range(5)
+        )
+    )
+    assert all(len(result["tasks"]) == 2 for result in results)
+    assert len(manager.data.tasks) == 2
+
+
+async def test_task_chain_fan_in_materializes_blocked_then_unlocks(manager):
+    """A fan-in step remains blocked until every predecessor is complete."""
+    participant, first, second, third = await _chain_records(manager)
+    chain = await manager.async_create_task_chain(
+        "Wäsche",
+        manager.today(),
+        [
+            {"id": "collect", "chore_type_id": first.id},
+            {"id": "prepare", "chore_type_id": second.id},
+            {
+                "id": "hang",
+                "chore_type_id": third.id,
+                "depends_on": ["collect", "prepare"],
+            },
+        ],
+    )
+    roots = {
+        task.chain_step_id: task
+        for task in manager.data.tasks.values()
+        if task.chain_id == chain["id"]
+    }
+
+    await manager.async_complete_task(roots["collect"].id, participant.id)
+    successor = next(
+        task
+        for task in manager.data.tasks.values()
+        if task.chain_step_id == "hang"
+    )
+    assert successor.blocked is True
+    with pytest.raises(ConflictError, match="blocked"):
+        await manager.async_complete_task(successor.id, participant.id)
+
+    await manager.async_complete_task(roots["prepare"].id, participant.id)
+    assert successor.blocked is False
+
+
+async def test_task_chain_undo_cascades_and_reopens_successor(manager):
+    """Undo restores dependency blocking and reverts completed descendants."""
+    participant, first, second, _ = await _chain_records(manager)
+    chain = await manager.async_create_task_chain(
+        "Wäsche",
+        manager.today(),
+        [
+            {"id": "collect", "chore_type_id": first.id},
+            {
+                "id": "wash",
+                "chore_type_id": second.id,
+                "depends_on": ["collect"],
+            },
+        ],
+    )
+    root = next(
+        task
+        for task in manager.data.tasks.values()
+        if task.chain_id == chain["id"] and task.chain_step_id == "collect"
+    )
+    root_completion = await manager.async_complete_task(
+        root.id, participant.id
+    )
+    successor = next(
+        task
+        for task in manager.data.tasks.values()
+        if task.chain_step_id == "wash"
+    )
+    successor_completion = await manager.async_complete_task(
+        successor.id, participant.id
+    )
+
+    await manager.async_undo_completion(root_completion.id)
+
+    assert root.status is TaskStatus.OPEN
+    assert successor.status is TaskStatus.OPEN
+    assert successor.blocked is True
+    assert successor_completion.active is False
+
+    await manager.async_complete_task(root.id, participant.id)
+    assert successor.blocked is False
+    assert len(
+        [
+            task
+            for task in manager.data.tasks.values()
+            if task.chain_step_id == "wash"
+        ]
+    ) == 1
+
+
+async def test_race_reset_reconciles_task_chain_dependencies(manager):
+    """Race reset reopens roots and blocks already materialized successors."""
+    participant, first, second, _ = await _chain_records(manager)
+    chain = await manager.async_create_task_chain(
+        "Wäsche",
+        manager.today(),
+        [
+            {"id": "collect", "chore_type_id": first.id},
+            {
+                "id": "wash",
+                "chore_type_id": second.id,
+                "depends_on": ["collect"],
+            },
+        ],
+    )
+    race = await manager.async_start_race()
+    root = next(
+        task
+        for task in manager.data.tasks.values()
+        if task.chain_id == chain["id"] and task.chain_step_id == "collect"
+    )
+    await manager.async_complete_task(root.id, participant.id)
+    successor = next(
+        task
+        for task in manager.data.tasks.values()
+        if task.chain_step_id == "wash"
+    )
+    await manager.async_complete_task(successor.id, participant.id)
+
+    reset = await manager.async_reset_race(race["race_id"])
+
+    assert reset["reverted_completions"] == 2
+    assert root.status is TaskStatus.OPEN
+    assert root.blocked is False
+    assert successor.status is TaskStatus.OPEN
+    assert successor.blocked is True
+
+
+async def test_unused_task_chain_can_be_edited_deactivated_and_deleted(manager):
+    """Planner edits replace untouched roots without leaving orphan tasks."""
+    _, first, second, third = await _chain_records(manager)
+    chain = await manager.async_create_task_chain(
+        "WÃ¤sche",
+        manager.today(),
+        [
+            {"id": "collect", "chore_type_id": first.id},
+            {
+                "id": "wash",
+                "chore_type_id": second.id,
+                "depends_on": ["collect"],
+            },
+        ],
+    )
+
+    paused = await manager.async_update_task_chain(
+        chain["id"],
+        name="WÃ¤sche komplett",
+        active=False,
+        steps=[
+            {"id": "collect", "chore_type_id": first.id},
+            {
+                "id": "wash",
+                "chore_type_id": second.id,
+                "depends_on": ["collect"],
+            },
+            {
+                "id": "hang",
+                "chore_type_id": third.id,
+                "depends_on": ["wash"],
+            },
+        ],
+    )
+
+    assert paused["name"] == "WÃ¤sche komplett"
+    assert paused["active"] is False
+    assert paused["tasks"] == []
+    assert not any(
+        task.chain_id == chain["id"] for task in manager.data.tasks.values()
+    )
+
+    active = await manager.async_update_task_chain(chain["id"], active=True)
+    assert [task["chain_step_id"] for task in active["tasks"]] == ["collect"]
+
+    await manager.async_delete_task_chain(chain["id"])
+    assert chain["id"] not in manager.data.task_chains
+    assert not any(
+        task.chain_id == chain["id"] for task in manager.data.tasks.values()
+    )
+
+
+async def test_task_chain_with_completion_history_cannot_be_deleted(manager):
+    """Historical completion records keep their chain definition intact."""
+    participant, first, _, _ = await _chain_records(manager)
+    chain = await manager.async_create_task_chain(
+        "WÃ¤sche",
+        manager.today(),
+        [{"id": "collect", "chore_type_id": first.id}],
+    )
+    root = next(
+        task
+        for task in manager.data.tasks.values()
+        if task.chain_id == chain["id"]
+    )
+    await manager.async_complete_task(root.id, participant.id)
+
+    with pytest.raises(ConflictError, match="completion history"):
+        await manager.async_delete_task_chain(chain["id"])
+
+    assert chain["id"] in manager.data.task_chains
+
+
 async def test_open_task_can_be_edited_and_deleted(manager):
     participant, _, task = await _base_records(manager)
     replacement = await manager.async_create_chore_type("Bad reinigen", 8)

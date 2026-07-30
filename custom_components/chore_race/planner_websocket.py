@@ -20,6 +20,18 @@ _ID = vol.All(str, vol.Length(min=1, max=64))
 _NAME = vol.All(str, vol.Strip, vol.Length(min=1, max=100))
 _POINTS = vol.All(int, vol.Range(min=0, max=1000))
 _OPTIONAL_TEXT = vol.Any(None, vol.All(str, vol.Length(max=255)))
+_CHAIN_STEP = vol.Schema(
+    {
+        vol.Required("id"): _ID,
+        vol.Required("chore_type_id"): _ID,
+        vol.Optional("depends_on"): vol.All([_ID], vol.Length(max=50)),
+        vol.Optional("unlock_after_step_ids"): vol.All(
+            [_ID], vol.Length(max=50)
+        ),
+        vol.Optional("sort_order"): int,
+    }
+)
+_CHAIN_STEPS = vol.All([_CHAIN_STEP], vol.Length(min=1, max=50))
 
 
 def _manager(hass: HomeAssistant) -> ChoreRaceManager | None:
@@ -150,6 +162,111 @@ def websocket_get_rewards(
         connection.send_result(
             msg["id"], manager.rewards_snapshot(include_inactive=True)
         )
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): "chore_race/get_task_chains"}
+)
+@callback
+def websocket_get_task_chains(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return task-chain definitions and current materialization state."""
+    if (manager := _require_manager(hass, connection, msg)) is not None:
+        connection.send_result(msg["id"], manager.task_chains_snapshot())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/create_task_chain",
+        vol.Required("name"): _NAME,
+        vol.Required("task_date"): vol.Coerce(date.fromisoformat),
+        vol.Required("steps"): _CHAIN_STEPS,
+    }
+)
+async def websocket_create_task_chain(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Create and materialize a task chain from the admin planner."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        chain = await manager.async_create_task_chain(
+            msg["name"],
+            msg["task_date"],
+            msg["steps"],
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], chain)
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/update_task_chain",
+        vol.Required("chain_id"): _ID,
+        vol.Optional("name"): _NAME,
+        vol.Optional("active"): bool,
+        vol.Optional("steps"): _CHAIN_STEPS,
+    }
+)
+async def websocket_update_task_chain(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update an unused task-chain definition."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: msg[key]
+        for key in ("name", "active", "steps")
+        if key in msg
+    }
+    try:
+        chain = await manager.async_update_task_chain(
+            msg["chain_id"], **changes
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], chain)
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_task_chain",
+        vol.Required("chain_id"): _ID,
+    }
+)
+async def websocket_delete_task_chain(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete an unused task chain and its untouched tasks."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_task_chain(msg["chain_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
 
 
 @websocket_api.require_admin
@@ -722,6 +839,10 @@ def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
         websocket_get_settings,
         websocket_get_recurrence_rules,
         websocket_get_rewards,
+        websocket_get_task_chains,
+        websocket_create_task_chain,
+        websocket_update_task_chain,
+        websocket_delete_task_chain,
         websocket_create_participant,
         websocket_update_participant,
         websocket_create_chore_type,

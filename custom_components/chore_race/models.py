@@ -248,6 +248,166 @@ class RewardSelection:
 
 
 @dataclass(slots=True)
+class TaskChainStep:
+    """One stable, reusable step in a task-chain definition."""
+
+    id: str
+    chain_id: str
+    chore_type_id: str
+    order: int
+    unlock_after_step_ids: list[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """Validate fields that do not require the containing chain."""
+        _validate_stable_id(self.id, "Task chain step ID")
+        _validate_stable_id(self.chain_id, "Task chain ID")
+        _validate_stable_id(self.chore_type_id, "Chore type ID")
+        if self.order < 0:
+            raise ValueError("Task chain step order must not be negative")
+        if len(self.unlock_after_step_ids) != len(
+            set(self.unlock_after_step_ids)
+        ):
+            raise ValueError("Task chain step dependencies must be unique")
+        for dependency_id in self.unlock_after_step_ids:
+            _validate_stable_id(dependency_id, "Task chain dependency ID")
+            if dependency_id == self.id:
+                raise ValueError("Task chain step cannot depend on itself")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible data."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        fallback_id: str | None = None,
+        fallback_chain_id: str | None = None,
+        fallback_order: int = 0,
+    ) -> Self:
+        """Restore a step, including the former singular dependency field."""
+        step_id = data.get("id", fallback_id)
+        chain_id = data.get("chain_id", fallback_chain_id)
+        dependency_ids = data.get("unlock_after_step_ids")
+        if dependency_ids is None:
+            dependency_ids = data.get("depends_on_step_ids")
+        if dependency_ids is None:
+            dependency_id = data.get("unlock_after_step_id")
+            dependency_ids = [] if dependency_id is None else [dependency_id]
+        if not isinstance(dependency_ids, list):
+            raise ValueError("Task chain step dependencies must be a list")
+        return cls(
+            id=step_id,
+            chain_id=chain_id,
+            chore_type_id=data.get("chore_type_id"),
+            order=data.get("order", fallback_order),
+            unlock_after_step_ids=list(dependency_ids),
+        )
+
+
+@dataclass(slots=True)
+class TaskChain:
+    """A generic directed sequence of reusable household tasks."""
+
+    id: str
+    name: str
+    steps: dict[str, TaskChainStep] = field(default_factory=dict)
+    active: bool = True
+
+    def __post_init__(self) -> None:
+        """Validate stable identities and the dependency graph."""
+        _validate_stable_id(self.id, "Task chain ID")
+        if not isinstance(self.name, str) or not self.name.strip():
+            raise ValueError("Task chain name must not be empty")
+
+        orders: dict[int, str] = {}
+        for key, step in self.steps.items():
+            if key != step.id:
+                raise ValueError(
+                    f"Task chain step key {key!r} does not match ID {step.id!r}"
+                )
+            if step.chain_id != self.id:
+                raise ValueError(
+                    f"Task chain step {step.id!r} belongs to another chain"
+                )
+            if step.order in orders:
+                raise ValueError(
+                    "Task chain step order must be unique: "
+                    f"{orders[step.order]!r} and {step.id!r}"
+                )
+            orders[step.order] = step.id
+
+        for step in self.steps.values():
+            for dependency_id in step.unlock_after_step_ids:
+                dependency = self.steps.get(dependency_id)
+                if dependency is None:
+                    raise ValueError(
+                        f"Task chain step {step.id!r} references unknown "
+                        f"dependency {dependency_id!r}"
+                    )
+                if dependency.order >= step.order:
+                    raise ValueError(
+                        f"Task chain dependency {dependency_id!r} must precede "
+                        f"step {step.id!r}"
+                    )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return JSON-compatible data."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "steps": {
+                key: value.to_dict() for key, value in self.steps.items()
+            },
+            "active": self.active,
+        }
+
+    @classmethod
+    def from_dict(
+        cls, data: dict[str, Any], *, fallback_id: str | None = None
+    ) -> Self:
+        """Restore a chain from canonical or legacy dictionary data."""
+        chain_id = data.get("id", fallback_id)
+        raw_steps = data.get("steps", {})
+        if isinstance(raw_steps, list):
+            step_items = [
+                (step.get("id"), step) for step in raw_steps
+            ]
+        elif isinstance(raw_steps, dict):
+            step_items = list(raw_steps.items())
+        else:
+            raise ValueError("Task chain steps must be a dictionary or list")
+
+        steps: dict[str, TaskChainStep] = {}
+        for index, (step_key, raw_step) in enumerate(step_items):
+            if not isinstance(raw_step, dict):
+                raise ValueError("Task chain step must be a dictionary")
+            step = TaskChainStep.from_dict(
+                raw_step,
+                fallback_id=step_key,
+                fallback_chain_id=chain_id,
+                fallback_order=index,
+            )
+            steps[step.id] = step
+
+        return cls(
+            id=chain_id,
+            name=data.get("name", ""),
+            steps=steps,
+            active=data.get("active", True),
+        )
+
+
+def _validate_stable_id(value: Any, label: str) -> None:
+    """Reject missing IDs and values whose normalization would change them."""
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"{label} must be a non-empty string")
+    if value != value.strip():
+        raise ValueError(f"{label} must not contain surrounding whitespace")
+
+
+@dataclass(slots=True)
 class Settings:
     """Persisted settings with race-ready defaults."""
 
@@ -280,7 +440,7 @@ class ChoreRaceData:
     settings: Settings = field(default_factory=Settings)
     race_sessions: dict[str, dict[str, Any]] = field(default_factory=dict)
     recurrence_rules: dict[str, dict[str, Any]] = field(default_factory=dict)
-    task_chains: dict[str, dict[str, Any]] = field(default_factory=dict)
+    task_chains: dict[str, TaskChain] = field(default_factory=dict)
     rewards: dict[str, Reward] = field(default_factory=dict)
     reward_selections: dict[str, RewardSelection] = field(default_factory=dict)
 
@@ -301,7 +461,9 @@ class ChoreRaceData:
             "settings": self.settings.to_dict(),
             "race_sessions": self.race_sessions,
             "recurrence_rules": self.recurrence_rules,
-            "task_chains": self.task_chains,
+            "task_chains": {
+                key: value.to_dict() for key, value in self.task_chains.items()
+            },
             "rewards": {
                 key: value.to_dict() for key, value in self.rewards.items()
             },
@@ -335,7 +497,10 @@ class ChoreRaceData:
             settings=Settings.from_dict(data.get("settings", {})),
             race_sessions=data.get("race_sessions", {}),
             recurrence_rules=data.get("recurrence_rules", {}),
-            task_chains=data.get("task_chains", {}),
+            task_chains={
+                key: TaskChain.from_dict(value, fallback_id=key)
+                for key, value in data.get("task_chains", {}).items()
+            },
             rewards={
                 key: Reward.from_dict(value)
                 for key, value in data.get("rewards", {}).items()

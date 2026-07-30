@@ -41,4 +41,9 @@ class ChoreRaceStore:
         version = raw.get("schema_version", 1)
         if version != 1:
             raise ValueError(f"Unsupported Chore Race schema version: {version}")
-        return raw
+        migrated = dict(raw)
+        # v1 originally reserved this collection as untyped dictionaries.
+        # The model loader accepts those legacy records and canonicalizes them
+        # when the next snapshot is saved.
+        migrated.setdefault("task_chains", {})
+        return migrated
