@@ -1061,6 +1061,29 @@ async def test_readding_removed_ha_person_reactivates_stable_participant(
     assert state["leaderboard"][0]["participant_id"] == original.id
 
 
+async def test_load_deactivates_participants_excluded_by_legacy_ready_race(
+    manager,
+):
+    """Upgrade old race removals to the current global removal semantics."""
+    await manager.async_load()
+    participant = await manager.async_create_participant(
+        "Arthur",
+        person_entity_id="person.arthur",
+    )
+    manager.data.race_sessions["legacy-ready-race"] = {
+        "status": "ready",
+        "participant_ids": [],
+        "excluded_participant_ids": [participant.id],
+    }
+    manager._store.async_load.return_value = manager.data
+    manager._store.async_save.reset_mock()
+
+    await manager.async_load()
+
+    assert manager.data.participants[participant.id].active is False
+    manager._store.async_save.assert_awaited_once_with(manager.data)
+
+
 async def test_legacy_ready_race_recovers_active_participants(manager):
     """Ready sessions created before exclusion tracking gain active people."""
     participant, _, _ = await _base_records(manager)

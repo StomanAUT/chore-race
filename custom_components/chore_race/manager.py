@@ -67,6 +67,24 @@ class ChoreRaceManager:
     async def async_load(self) -> None:
         """Load persisted state."""
         self._data = await self._store.async_load()
+        if self._deactivate_legacy_race_exclusions():
+            await self._store.async_save(self._data)
+
+    def _deactivate_legacy_race_exclusions(self) -> bool:
+        """Apply current removal semantics to exclusions saved by older builds."""
+        excluded_ids = {
+            participant_id
+            for race in self._data.race_sessions.values()
+            if RaceStatus(race["status"]) is RaceStatus.READY
+            for participant_id in race.get("excluded_participant_ids", [])
+        }
+        changed = False
+        for participant_id in excluded_ids:
+            participant = self._data.participants.get(participant_id)
+            if participant is not None and participant.active:
+                participant.active = False
+                changed = True
+        return changed
 
     def async_add_listener(self, listener: Callable[[], None]) -> Callable[[], None]:
         """Subscribe an entity to manager changes."""
