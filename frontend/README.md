@@ -16,6 +16,8 @@ The card visualizes and operates:
 - ranked live scoring with base, streak, fair-play and copilot breakdowns;
 - a unique champion result after the finish;
 - an immutable champion reward choice and the latest winner selection;
+- optional task-chain progress with clearly labelled ready, blocked and
+  completed steps;
 - automatic and configurable reduced-motion behavior;
 - safe connection cleanup, bounded refresh intervals, stale-request rejection,
   and last-known-state display when an API call fails.
@@ -73,6 +75,22 @@ whole floor; selecting one clears the other. This supports one task such as
 “Boden wischen · Erdgeschoss” without duplicating it for every room. The
 planner previews and snapshots the point calculation, for example
 `1 Punkt × 6 Räume = 6 Punkte`.
+
+When the backend exposes `chore_race/get_task_chains`, the planner adds a
+compact task-chain editor. A chain has a name, start date and at least two
+ordered chore steps. Dependencies can only point to an earlier visible step,
+so a cycle cannot be created in the visual editor. Existing chains can be
+renamed, activated or deactivated, and removed with the corresponding
+`create_task_chain`, `update_task_chain` and `delete_task_chain` WebSocket
+commands. Older installations continue to work: missing commands and absent
+`state.task_chains` data are treated as an empty optional feature.
+
+The race card marks executable chain tasks as **Bereit** and prevents the
+completion action for **Blockiert** steps. A compact progress strip also
+distinguishes **Bereit**, **Blockiert** and **Erledigt** for screen readers.
+Both task-chain layouts collapse cleanly on small dashboards and retain the
+two-column race overview on typical 10-inch tablets. Motion is suppressed when
+the operating system requests reduced motion.
 
 Both cards expose `max_width` and `accent_color` in Home Assistant's visual
 card editor. `max_width` accepts 280 to 1400 pixels; the cards also shrink to

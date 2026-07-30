@@ -154,3 +154,20 @@ The normal planner UI therefore exposes only the curated task-image library.
 `ChoreType.icon` remains optional in storage and APIs as a compatibility
 fallback for older records, Home Assistant automations, and installations
 whose image asset is temporarily unavailable.
+
+## Task-chain definitions
+
+A `TaskChain` is a reusable, active/deactivatable definition with a stable ID
+and typed `TaskChainStep` records. Every step keeps its own stable ID, the
+owning chain ID, a chore-type reference, a unique non-negative order and zero
+or more prerequisite step IDs. Dependencies must exist in the same chain and
+must precede the dependent step. This makes linear sequences and branching
+directed acyclic chains possible without appliance-specific behavior.
+
+The current schema version remains `1`: older installations already reserved
+`task_chains` as dictionaries. Loading accepts those dictionaries, missing
+embedded IDs, list-based step collections and the former singular
+`unlock_after_step_id` field. The next normal save writes one canonical typed
+representation. Definitions are separate from concrete `ChoreTask` snapshots;
+tasks continue to carry `chain_id`, `chain_step_id` and `blocked` so later
+definition edits cannot rewrite historical work.

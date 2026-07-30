@@ -40,6 +40,35 @@
     return date.toISOString().slice(0, 10);
   };
 
+  const normalizeTaskChains = (value) => {
+    const chains = Array.isArray(value)
+      ? value
+      : value && typeof value === "object"
+        ? Object.entries(value).map(([id, chain]) => ({ id, ...chain }))
+        : [];
+    return chains
+      .filter((chain) => chain && typeof chain === "object")
+      .map((chain, chainIndex) => ({
+        ...chain,
+        id: String(chain.id ?? `chain-${chainIndex}`),
+        name: String(chain.name ?? "Aufgabenkette"),
+        active: chain.active !== false,
+        steps: (Array.isArray(chain.steps) ? chain.steps : [])
+          .filter((step) => step && typeof step === "object")
+          .map((step, stepIndex) => ({
+            ...step,
+            id: String(step.id ?? `step-${stepIndex + 1}`),
+            depends_on: Array.isArray(step.depends_on)
+              ? step.depends_on.map(String)
+              : step.depends_on
+                ? [String(step.depends_on)]
+                : [],
+            sort_order: Number(step.sort_order ?? stepIndex),
+          }))
+          .sort((a, b) => a.sort_order - b.sort_order),
+      }));
+  };
+
   class ChoreRacePlannerCardEditor extends HTMLElement {
     setConfig(config) {
       this._config = { ...config };
@@ -107,6 +136,7 @@
         floors: [],
         recurrenceRules: [],
         rewards: [],
+        taskChains: [],
       };
     }
 
@@ -151,6 +181,7 @@
           this._hass.callWS({ type: "chore_race/get_rewards" }),
         ]);
         let recurrenceRules = [];
+        let taskChains = [];
         try {
           recurrenceRules = await this._hass.callWS({
             type: "chore_race/get_recurrence_rules",
@@ -158,12 +189,20 @@
         } catch (_error) {
           // Older backends do not expose recurrence management yet.
         }
+        try {
+          taskChains = normalizeTaskChains(
+            await this._hass.callWS({ type: "chore_race/get_task_chains" }),
+          );
+        } catch (_error) {
+          // Task chains are optional while older installations are upgraded.
+        }
         this._data = {
           participants,
           choreTypes,
           tasks,
           recurrenceRules,
           rewards,
+          taskChains,
           areas: places.filter((item) => item.kind !== "floor").sort((a, b) =>
             String(a.name).localeCompare(String(b.name), "de"),
           ),
@@ -226,6 +265,80 @@
             "Belohnung wurde angelegt.",
           );
         });
+
+      this.shadowRoot
+        .querySelector('[data-form="task-chain"]')
+        ?.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const values = new FormData(form);
+          const steps = this._chainPayload(form);
+          if (steps.length < 2) {
+            const firstOptional = form.querySelectorAll(
+              '[name="step_chore_type_id"]',
+            )[1];
+            firstOptional?.setCustomValidity(
+              "Eine Aufgabenkette benötigt mindestens zwei Schritte.",
+            );
+            firstOptional?.reportValidity();
+            firstOptional?.setCustomValidity("");
+            return;
+          }
+          this._submitWS(
+            "chore_race/create_task_chain",
+            {
+              name: values.get("name").trim(),
+              task_date: values.get("task_date"),
+              steps,
+            },
+            "Aufgabenkette wurde angelegt.",
+          );
+        });
+
+      this.shadowRoot.querySelectorAll("[data-edit-chain]").forEach((form) => {
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          const values = new FormData(event.currentTarget);
+          const steps = this._chainPayload(event.currentTarget);
+          if (steps.length < 2) {
+            const firstOptional = event.currentTarget.querySelectorAll(
+              '[name="step_chore_type_id"]',
+            )[1];
+            firstOptional?.setCustomValidity(
+              "Eine Aufgabenkette benötigt mindestens zwei Schritte.",
+            );
+            firstOptional?.reportValidity();
+            firstOptional?.setCustomValidity("");
+            return;
+          }
+          this._submitWS(
+            "chore_race/update_task_chain",
+            {
+              chain_id: event.currentTarget.dataset.editChain,
+              name: values.get("name").trim(),
+              active: values.get("active") === "on",
+              steps,
+            },
+            "Aufgabenkette wurde aktualisiert.",
+          );
+        });
+      });
+      this.shadowRoot.querySelectorAll("[data-delete-chain]").forEach((button) => {
+        button.addEventListener("click", () => {
+          if (
+            !window.confirm(
+              "Diese Aufgabenkette wirklich deaktivieren oder löschen? Bereits erledigte Aufgaben bleiben historisch erhalten.",
+            )
+          ) {
+            return;
+          }
+          this._submitWS(
+            "chore_race/delete_task_chain",
+            { chain_id: button.dataset.deleteChain },
+            "Aufgabenkette wurde entfernt.",
+          );
+        });
+      });
 
       this.shadowRoot.querySelectorAll("[data-reward-action]").forEach((button) => {
         button.addEventListener("click", () => {
@@ -877,6 +990,151 @@
         .join("")}</ul>`;
     }
 
+    _chainStepFields(chain = null) {
+      const steps = chain?.steps?.length
+        ? chain.steps
+        : [
+            { id: "step-1", chore_type_id: "", depends_on: [], sort_order: 0 },
+            { id: "step-2", chore_type_id: "", depends_on: ["step-1"], sort_order: 1 },
+            { id: "step-3", chore_type_id: "", depends_on: ["step-2"], sort_order: 2 },
+          ];
+      return steps
+        .map((step, index) => {
+          const previous = steps.slice(0, index);
+          const dependency = step.depends_on?.[0] ?? "";
+          return `<fieldset class="chain-step" data-chain-step>
+            <legend>Schritt ${index + 1}</legend>
+            <input type="hidden" name="step_id" value="${escapeHtml(step.id)}">
+            <div class="chain-step-grid">
+              <label>Aufgabe<select name="step_chore_type_id" ${index === 0 ? "required" : ""}>
+                <option value="">${index === 0 ? "Bitte wählen" : "Kein weiterer Schritt"}</option>
+                ${this._choreOptions(step.chore_type_id)}
+              </select></label>
+              <label>Startet nach<select name="step_depends_on" ${
+                index === 0 ? "disabled" : ""
+              }>
+                <option value="">Ohne Abhängigkeit</option>
+                ${previous
+                  .map(
+                    (candidate, previousIndex) =>
+                      `<option value="${escapeHtml(candidate.id)}" ${
+                        candidate.id === dependency ? "selected" : ""
+                      }>Schritt ${previousIndex + 1}</option>`,
+                  )
+                  .join("")}
+              </select></label>
+            </div>
+            <p>${index === 0
+              ? "Dieser Schritt ist sofort bereit."
+              : "Nur frühere Schritte können gewählt werden – dadurch entstehen keine Zyklen."}</p>
+          </fieldset>`;
+        })
+        .join("");
+    }
+
+    _chainPayload(form) {
+      const steps = [...form.querySelectorAll("[data-chain-step]")]
+        .map((fieldset, index) => {
+          const choreTypeId = fieldset.querySelector(
+            '[name="step_chore_type_id"]',
+          )?.value;
+          if (!choreTypeId) return null;
+          const id =
+            fieldset.querySelector('[name="step_id"]')?.value || `step-${index + 1}`;
+          const dependency = fieldset.querySelector(
+            '[name="step_depends_on"]',
+          )?.value;
+          return {
+            id,
+            chore_type_id: choreTypeId,
+            depends_on: dependency ? [dependency] : [],
+            sort_order: index,
+          };
+        })
+        .filter(Boolean);
+      const includedIds = new Set(steps.map((step) => step.id));
+      steps.forEach((step) => {
+        step.depends_on = step.depends_on.filter((id) => includedIds.has(id));
+      });
+      return steps;
+    }
+
+    _taskChainList() {
+      if (!this._data.taskChains.length) {
+        return '<p class="empty">Noch keine Aufgabenketten angelegt.</p>';
+      }
+      const choreById = Object.fromEntries(
+        this._data.choreTypes.map((item) => [item.id, item]),
+      );
+      const tasksByChain = this._data.tasks.reduce((result, task) => {
+        if (task.chain_id) (result[task.chain_id] ??= []).push(task);
+        return result;
+      }, {});
+      return `<ul class="chain-list">${this._data.taskChains
+        .map((chain) => {
+          const tasks = tasksByChain[chain.id] ?? [];
+          const completed = tasks.filter((task) => task.status === "completed").length;
+          const blocked = tasks.filter(
+            (task) => task.status === "open" && task.blocked,
+          ).length;
+          const ready = tasks.filter(
+            (task) => task.status === "open" && !task.blocked,
+          ).length;
+          return `<li class="manageable chain-item ${chain.active ? "" : "inactive"}">
+            <span class="task-icon"><ha-icon icon="mdi:link-variant"></ha-icon></span>
+            <details>
+              <summary><strong>${escapeHtml(chain.name)}</strong>
+                <small>${chain.steps.length} Schritte · ${ready} bereit · ${blocked} blockiert · ${completed} erledigt</small>
+                <span class="edit-hint"><ha-icon icon="mdi:pencil"></ha-icon>
+                  Bearbeiten</span>
+              </summary>
+              <ol class="chain-preview" aria-label="Schritte von ${escapeHtml(chain.name)}">
+                ${chain.steps
+                  .map((step, index) => {
+                    const task = tasks.find(
+                      (item) => item.chain_step_id === step.id,
+                    );
+                    const status =
+                      task?.status === "completed"
+                        ? "completed"
+                        : task?.blocked
+                          ? "blocked"
+                          : "ready";
+                    const label = {
+                      completed: "Erledigt",
+                      blocked: "Blockiert",
+                      ready: "Bereit",
+                    }[status];
+                    return `<li class="chain-preview-step ${status}">
+                      <span aria-hidden="true">${index + 1}</span>
+                      <strong>${escapeHtml(
+                        step.name ||
+                          choreById[step.chore_type_id]?.name ||
+                          "Aufgabe",
+                      )}</strong>
+                      <small class="status-badge">${label}</small>
+                    </li>`;
+                  })
+                  .join("")}
+              </ol>
+              <form class="compact-form" data-edit-chain="${escapeHtml(chain.id)}">
+                <label>Name<input required maxlength="100" name="name"
+                  value="${escapeHtml(chain.name)}"></label>
+                <label class="check"><input name="active" type="checkbox"
+                  ${chain.active ? "checked" : ""}> Aufgabenkette aktiv</label>
+                <div class="chain-editor">${this._chainStepFields(chain)}</div>
+                <div class="actions">
+                  <button>Änderungen speichern</button>
+                  <button type="button" class="danger"
+                    data-delete-chain="${escapeHtml(chain.id)}">Aufgabenkette löschen</button>
+                </div>
+              </form>
+            </details>
+          </li>`;
+        })
+        .join("")}</ul>`;
+    }
+
     _taskList() {
       const choreById = Object.fromEntries(
         this._data.choreTypes.map((item) => [item.id, item]),
@@ -1036,6 +1294,7 @@
             <span><strong>${this._data.participants.filter((item) => item.active).length}</strong> Teilnehmer</span>
             <span><strong>${this._data.choreTypes.filter((item) => item.active).length}</strong> Aufgabentypen</span>
             <span><strong>${this._data.tasks.filter((item) => item.status === "open").length}</strong> offene Aufgaben</span>
+            <span><strong>${this._data.taskChains.filter((item) => item.active).length}</strong> Aufgabenketten</span>
           </nav>
           <div class="forms">
             <form data-form="participant" class="create-panel">
@@ -1143,6 +1402,25 @@
               <button ${disabled} ${hasChores ? "" : "disabled"}>Aufgabe einplanen</button>
             </form>
           </div>
+          <section class="chains">
+            <div class="list-head"><div><h3>Aufgabenketten</h3>
+              <p>Mehrere Aufgaben in eine klare, zyklusfreie Reihenfolge bringen.</p></div>
+              <span>${this._data.taskChains.length}</span></div>
+            <form data-form="task-chain" class="compact-form chain-create">
+              <div class="chain-basics">
+                <label>Name<input required maxlength="100" name="name"
+                  placeholder="z. B. Küche fertig machen"></label>
+                <label>Startdatum<input required type="date" name="task_date"
+                  value="${today()}"></label>
+              </div>
+              <div class="chain-editor">${this._chainStepFields()}</div>
+              <p class="chain-help">Schritte werden von oben nach unten ausgeführt.
+                Ein Schritt wird erst freigegeben, wenn sein Vorgänger erledigt ist.</p>
+              <button ${disabled} ${hasChores ? "" : "disabled"}>
+                Aufgabenkette anlegen</button>
+            </form>
+            ${this._taskChainList()}
+          </section>
           <section class="rewards"><div class="list-head"><div><h3>Belohnungen</h3>
             <p>Der eindeutige Rennsieger darf nach dem Zieleinlauf einmal wählen.</p></div>
             <span>${this._data.rewards.filter((item) => item.active).length}</span></div>
@@ -1214,7 +1492,7 @@
           font-size:12px; line-height:1.45; }
         .refresh { flex:0 0 40px; width:40px; height:40px; min-height:40px;
           padding:0; font-size:20px; border-radius:12px; }
-        .overview { display:grid; grid-template-columns:repeat(3,minmax(0,1fr));
+        .overview { display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
           gap:8px; margin-top:14px; }
         .overview span { padding:9px 11px; color:var(--muted); background:var(--panel);
           border:1px solid var(--line); border-radius:12px; font-size:10px;
@@ -1223,7 +1501,7 @@
           font-size:17px; line-height:1.1; }
         .forms { display:grid; grid-template-columns:1fr;
           gap:12px; margin-top:12px; align-items:start; }
-        form,.tasks,.types,.rules,.rewards { padding:15px; border:1px solid var(--line);
+        form,.tasks,.types,.rules,.rewards,.chains { padding:15px; border:1px solid var(--line);
           border-radius:16px; background:var(--panel); }
         .section-head { display:flex; align-items:flex-start; gap:9px; margin-bottom:10px; }
         .step { display:grid; place-items:center; flex:0 0 24px; height:24px; color:var(--ink);
@@ -1328,10 +1606,41 @@
           background:color-mix(in srgb,var(--error-color,#db4437) 8%,var(--surface));
           border-color:color-mix(in srgb,var(--error-color,#db4437) 22%,var(--line)); }
         [hidden] { display:none !important; }
-        .tasks,.types,.rules,.rewards { margin-top:12px; }
+        .tasks,.types,.rules,.rewards,.chains { margin-top:12px; }
         .reward-form { margin:0 0 10px; padding:10px; }
         .reward-fields { display:grid; grid-template-columns:2fr 1.4fr .7fr; gap:8px; }
         .reward-fields label { margin:0; }
+        .chain-create { margin:0 0 10px; padding:10px; }
+        .chain-basics,.chain-step-grid { display:grid;
+          grid-template-columns:minmax(0,1.5fr) minmax(140px,1fr); gap:8px; }
+        .chain-basics label,.chain-step-grid label { margin-block:0; }
+        .chain-editor { display:grid; gap:7px; margin:9px 0; }
+        .chain-step { min-width:0; margin:0; padding:8px 10px;
+          border:1px solid var(--line); border-radius:11px; background:var(--surface); }
+        .chain-step legend { padding:0 5px; color:var(--muted);
+          font-size:10px; font-weight:800; }
+        .chain-step p,.chain-help { margin:5px 0 0; color:var(--muted);
+          font-size:10px; line-height:1.35; }
+        .chain-list { margin-top:8px; }
+        .chain-item > details[open] { width:100%; }
+        .chain-preview { display:grid; grid-template-columns:1fr; gap:5px;
+          margin:10px 0 0; padding:0; list-style:none; }
+        .chain-preview-step { display:grid;
+          grid-template-columns:24px minmax(0,1fr) auto; gap:7px; align-items:center;
+          min-height:36px; padding:6px 8px; }
+        .chain-preview-step > span { display:grid; place-items:center; width:23px;
+          height:23px; border:1px solid var(--line); border-radius:8px;
+          color:var(--muted); font-size:10px; font-weight:800; }
+        .status-badge { margin:0 !important; padding:4px 7px; border-radius:99px;
+          color:var(--muted); background:var(--surface-raised); font-weight:750 !important; }
+        .chain-preview-step.ready .status-badge {
+          color:var(--success-color,#16845b);
+          background:color-mix(in srgb,var(--success-color,#16845b) 12%,var(--surface)); }
+        .chain-preview-step.blocked .status-badge {
+          color:var(--warning-color,#b36b00);
+          background:color-mix(in srgb,var(--warning-color,#b36b00) 13%,var(--surface)); }
+        .chain-preview-step.completed { opacity:.68; }
+        .chain-preview-step.completed strong { text-decoration:line-through; }
         ul { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px;
           margin:0; padding:0; list-style:none; }
         li { display:flex; gap:10px; align-items:center; min-width:0; padding:9px 10px;
@@ -1363,6 +1672,11 @@
           color:var(--ink); background:color-mix(in srgb,var(--accent) 14%,var(--surface));
           border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line)); border-radius:10px; }
         .empty { margin:0; padding:14px; color:var(--muted); text-align:center; }
+        @media (prefers-reduced-motion:reduce) {
+          *,*::before,*::after { animation-duration:.001ms !important;
+            animation-iteration-count:1 !important; scroll-behavior:auto !important;
+            transition-duration:.001ms !important; }
+        }
         @container (min-width:760px) {
           .forms { grid-template-columns:repeat(2,minmax(0,1fr)); }
           .forms > .types,.forms > [data-form="task"] { grid-column:1/-1; }
@@ -1386,8 +1700,10 @@
           .overview span { min-width:0; padding:8px 6px; text-align:center;
             overflow-wrap:anywhere; }
           .overview strong { font-size:16px; }
-          form,.tasks,.types,.rules,.rewards { padding:12px; }
+          form,.tasks,.types,.rules,.rewards,.chains { padding:12px; }
           .reward-fields { grid-template-columns:1fr; }
+          .overview { grid-template-columns:repeat(2,minmax(0,1fr)); }
+          .chain-basics,.chain-step-grid { grid-template-columns:1fr; }
           .rule-actions { width:100%; padding-left:38px; }
           .manageable > details > summary { padding-right:32px; }
           .edit-hint { padding:4px; font-size:0; }

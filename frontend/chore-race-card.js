@@ -27,6 +27,28 @@
       .replaceAll("'", "&#039;");
 
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+  const normalizeTaskChains = (value) => {
+    const chains = Array.isArray(value)
+      ? value
+      : value && typeof value === "object"
+        ? Object.entries(value).map(([id, chain]) => ({ id, ...chain }))
+        : [];
+    return chains
+      .filter((chain) => chain && typeof chain === "object")
+      .map((chain, chainIndex) => ({
+        ...chain,
+        id: String(chain.id ?? `chain-${chainIndex}`),
+        name: String(chain.name ?? "Aufgabenkette"),
+        steps: (Array.isArray(chain.steps) ? chain.steps : [])
+          .filter((step) => step && typeof step === "object")
+          .map((step, stepIndex) => ({
+            ...step,
+            id: String(step.id ?? `step-${stepIndex + 1}`),
+            sort_order: Number(step.sort_order ?? stepIndex),
+          }))
+          .sort((a, b) => a.sort_order - b.sort_order),
+      }));
+  };
   const assetUrl = (value) =>
     String(value ?? "").replace(
       /^\/chore-race-assets\//,
@@ -590,11 +612,59 @@
         this._config.force_reduced_motion === true || this._motionQuery?.matches;
       const title = escapeHtml(this._config.title ?? "Chore Race");
       const openTasks = race.open_tasks ?? [];
+      const taskChains = normalizeTaskChains(
+        state.task_chains ?? race.task_chains,
+      );
       const running = status === "running";
       const isAdmin = this._hass?.user?.is_admin === true;
       const selectedTask = openTasks.find(
         (task) => task.id === this._selectedTaskId,
       );
+      const chainById = Object.fromEntries(
+        taskChains.map((chain) => [chain.id, chain]),
+      );
+      const chainStatus = taskChains.length
+        ? `<section class="chain-status" aria-labelledby="chain-status-title">
+            <div class="section-heading">
+              <div><span>ABLAUF</span>
+                <strong id="chain-status-title">Aufgabenketten</strong></div>
+              <small>${taskChains.length} aktiv</small>
+            </div>
+            <div class="chain-status-list">
+              ${taskChains
+                .map((chain) => {
+                  const completed = chain.steps.filter(
+                    (step) => step.status === "completed" || step.completed === true,
+                  ).length;
+                  return `<article>
+                    <div><strong>${escapeHtml(chain.name)}</strong>
+                      <small>${completed} von ${chain.steps.length} erledigt</small></div>
+                    <ol aria-label="Fortschritt ${escapeHtml(chain.name)}">
+                      ${chain.steps
+                        .map((step, index) => {
+                          const stepStatus =
+                            step.status === "completed" || step.completed === true
+                              ? "completed"
+                              : step.status === "blocked" || step.blocked === true
+                                ? "blocked"
+                                : "ready";
+                          const label = {
+                            completed: "Erledigt",
+                            blocked: "Blockiert",
+                            ready: "Bereit",
+                          }[stepStatus];
+                          return `<li class="${stepStatus}" title="${label}">
+                            <span class="sr-only">Schritt ${index + 1}: ${label}</span>
+                          </li>`;
+                        })
+                        .join("")}
+                    </ol>
+                  </article>`;
+                })
+                .join("")}
+            </div>
+          </section>`
+        : "";
 
       const lanes = racers.length
         ? racers
@@ -662,12 +732,13 @@
                 task.floor_id && multiplier > 1
                   ? `${Number(task.base_race_points) || 0} × ${multiplier} Räume = ${Number(task.race_points) || 0} Punkte`
                   : `${Number(task.race_points) || 0} Punkte`;
+              const chain = task.chain_id ? chainById[task.chain_id] : null;
               return `
-                <article class="task-card">
+                <article class="task-card ${task.blocked ? "blocked" : "ready"}">
                   ${image}
                   <div class="task-copy">
                     <div>
-                      <small>NÄCHSTE AUFGABE</small>
+                      <small>${task.blocked ? "BLOCKIERT" : chain ? "KETTE · BEREIT" : "NÄCHSTE AUFGABE"}</small>
                       <h3>${escapeHtml(task.name ?? "Aufgabe")}</h3>
                       <span>${pointLabel}${
                         task.floor_id && this._floors[task.floor_id]
@@ -675,10 +746,13 @@
                           : task.area_id && this._areas[task.area_id]
                           ? ` · ${escapeHtml(this._areas[task.area_id])}`
                           : ""
-                      }</span>
+                      }${chain ? ` · ${escapeHtml(chain.name)}` : ""}</span>
                     </div>
                     <button class="complete" data-complete-task="${escapeHtml(task.id)}"
-                      ${this._actionBusy ? "disabled" : ""}>Erledigt</button>
+                      ${this._actionBusy || task.blocked ? "disabled" : ""}
+                      aria-disabled="${this._actionBusy || task.blocked ? "true" : "false"}"
+                      title="${task.blocked ? "Erst den vorherigen Schritt erledigen" : "Aufgabe erledigen"}">
+                      ${task.blocked ? "Blockiert" : "Erledigt"}</button>
                   </div>
                 </article>`;
             })
@@ -916,6 +990,7 @@
               : ""
           }
           ${champion || lastReward || scoreFeedback}
+          ${chainStatus}
           <div class="race-stage">
             <section class="stage-panel lanes-panel" aria-label="Rennstrecke">
               <div class="section-heading">
@@ -1040,6 +1115,8 @@
           grid-template-columns:52px minmax(0,1fr); overflow:hidden;
           border:1px solid var(--line); border-radius:12px;
           background:color-mix(in srgb,var(--surface-raised) 72%,var(--surface)); }
+        .task-card.blocked { opacity:.72; }
+        .task-card.blocked .task-image { filter:grayscale(.55); }
         .task-image, .task-icon { width:52px; height:100%; min-height:62px;
           object-fit:contain; }
         .task-image { padding:6px;
@@ -1064,6 +1141,31 @@
         button:disabled { cursor:wait; opacity:.6; }
         .complete { flex:0 0 auto; min-height:38px; padding:0 11px;
           border-radius:11px; color:white; background:var(--accent); font-size:11px; }
+        .task-card.blocked .complete { color:var(--muted);
+          background:var(--surface-raised); border:1px solid var(--line); }
+        .chain-status { margin:0 0 12px; padding:10px 12px;
+          border:1px solid var(--line); border-radius:14px;
+          background:color-mix(in srgb,var(--surface-raised) 55%,transparent); }
+        .chain-status-list { display:grid;
+          grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:7px; }
+        .chain-status-list article { display:grid; grid-template-columns:minmax(0,1fr) auto;
+          align-items:center; gap:9px; min-width:0; padding:7px 9px;
+          border:1px solid var(--line); border-radius:10px; background:var(--surface); }
+        .chain-status-list article > div { display:grid; min-width:0; }
+        .chain-status-list strong { overflow:hidden; color:var(--ink); font-size:11px;
+          text-overflow:ellipsis; white-space:nowrap; }
+        .chain-status-list small { color:var(--muted); font-size:9px; }
+        .chain-status-list ol { display:flex; gap:4px; margin:0; padding:0; list-style:none; }
+        .chain-status-list li { width:10px; height:10px; border-radius:50%;
+          border:1px solid var(--line); background:var(--surface-raised); }
+        .chain-status-list li.ready { border-color:var(--success-color,#16845b);
+          background:var(--success-color,#16845b); }
+        .chain-status-list li.blocked { border-color:var(--warning-color,#b36b00);
+          background:color-mix(in srgb,var(--warning-color,#b36b00) 22%,var(--surface)); }
+        .chain-status-list li.completed { border-color:var(--success-color,#16845b);
+          background:color-mix(in srgb,var(--success-color,#16845b) 35%,var(--surface)); }
+        .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+          overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
         .race-controls { display:grid; grid-template-columns:repeat(2,minmax(0,1fr));
           gap:8px; margin:0 0 12px; }
         .race-control { width:100%; min-height:44px; margin:0; }

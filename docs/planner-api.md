@@ -21,6 +21,7 @@ Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 | `chore_race/get_leaderboard` | Current-week totals |
 | `chore_race/get_race_state` | Current/latest race, countdown, open tasks and leaderboard |
 | `chore_race/get_recurrence_rules` | Persisted recurrence rules |
+| `chore_race/get_task_chains` | Chain definitions, steps and materialized task state |
 
 ## Authenticated race completion
 
@@ -150,6 +151,65 @@ immediately.
 Chore types can be updated through `chore_race/update_chore_type`. Permanent
 deletion through `chore_race/delete_chore_type` is allowed only when no task or
 recurrence rule references the type; otherwise it must be deactivated.
+
+### Create and manage task chains
+
+Task chains unlock later chores only after their dependencies have been
+completed. Step IDs are stable within a chain and dependencies refer to those
+IDs. Multiple dependencies provide fan-in semantics: the step remains blocked
+until every predecessor is complete.
+
+```json
+{
+  "type": "chore_race/create_task_chain",
+  "name": "Küche komplett",
+  "task_date": "2026-07-30",
+  "steps": [
+    {
+      "id": "clear",
+      "chore_type_id": "clear-counter",
+      "depends_on": []
+    },
+    {
+      "id": "wipe",
+      "chore_type_id": "wipe-counter",
+      "depends_on": ["clear"]
+    },
+    {
+      "id": "floor",
+      "chore_type_id": "mop-floor",
+      "depends_on": ["wipe"]
+    }
+  ]
+}
+```
+
+Administrators may update an unused definition with
+`chore_race/update_task_chain` and remove it with
+`chore_race/delete_task_chain`. A chain with completion history is immutable,
+so historical results cannot silently change. Deactivating an unused chain
+removes its untouched materialized tasks; activating it again materializes its
+root steps.
+
+```json
+{
+  "type": "chore_race/update_task_chain",
+  "chain_id": "stable-chain-id",
+  "name": "Küche am Abend",
+  "active": true
+}
+```
+
+```json
+{
+  "type": "chore_race/delete_task_chain",
+  "chain_id": "stable-chain-id"
+}
+```
+
+Completing or undoing a chain task automatically reconciles all successors.
+The race view exposes chain progress and never allows a blocked task to be
+completed.
 
 ### Ensure a task from an automation or entity
 
