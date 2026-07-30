@@ -7,7 +7,9 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.chore_race.const import DOMAIN
 
 
-async def test_clean_install_creates_and_unloads_all_sensors(hass):
+async def test_clean_install_creates_and_unloads_all_sensors(
+    hass, enable_custom_integrations
+):
     """A new empty installation loads without seed data or existing storage."""
     entry = MockConfigEntry(
         domain=DOMAIN,
