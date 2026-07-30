@@ -18,7 +18,7 @@ async def _base_records(manager):
     chore_type = await manager.async_create_chore_type("Aufräumen", 5)
     task = await manager.async_create_task(
         chore_type.id,
-        date.today(),
+        manager.today(),
         preferred_participant_id=participant.id,
     )
     return participant, chore_type, task
