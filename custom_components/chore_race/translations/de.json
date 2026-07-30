@@ -8,7 +8,8 @@
       }
     },
     "abort": {
-      "already_configured": "Chore Race ist bereits eingerichtet."
+      "already_configured": "Chore Race ist bereits eingerichtet.",
+      "single_instance_allowed": "Es ist nur eine Chore-Race-Instanz erlaubt."
     }
   },
   "entity": {
@@ -18,6 +19,9 @@
       },
       "completed_today": {
         "name": "Heute erledigt"
+      },
+      "automatic_tasks_today": {
+        "name": "Heute automatisch erstellt"
       },
       "week_leader": {
         "name": "Wochenführung",

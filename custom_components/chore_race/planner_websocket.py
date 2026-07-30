@@ -6,10 +6,10 @@ from datetime import date
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import floor_registry as fr
 
 from .const import DOMAIN
 from .errors import ChoreRaceError
@@ -55,22 +55,58 @@ def websocket_get_areas(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Return current HA areas without duplicating room management."""
-    registry = ar.async_get(hass)
+    """Return current HA areas and floors without duplicating place management."""
+    area_registry = ar.async_get(hass)
+    floor_registry = fr.async_get(hass)
     connection.send_result(
         msg["id"],
         sorted(
-            (
+            [
                 {
+                    "kind": "area",
                     "area_id": area.id,
                     "name": area.name,
                     "icon": area.icon,
                     "picture": area.picture,
+                    "floor_id": area.floor_id,
                 }
-                for area in registry.async_list_areas()
-            ),
-            key=lambda area: area["name"].casefold(),
+                for area in area_registry.async_list_areas()
+            ]
+            + [
+                {
+                    "kind": "floor",
+                    "floor_id": floor.floor_id,
+                    "name": floor.name,
+                    "icon": floor.icon,
+                    "level": floor.level,
+                }
+                for floor in floor_registry.async_list_floors()
+            ],
+            key=lambda place: place["name"].casefold(),
         ),
+    )
+
+
+@websocket_api.websocket_command({vol.Required("type"): "chore_race/get_floors"})
+@callback
+def websocket_get_floors(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return current HA floors for whole-floor tasks."""
+    registry = fr.async_get(hass)
+    connection.send_result(
+        msg["id"],
+        [
+            {
+                "floor_id": floor.floor_id,
+                "name": floor.name,
+                "icon": floor.icon,
+                "level": floor.level,
+            }
+            for floor in registry.async_list_floors()
+        ],
     )
 
 
@@ -86,6 +122,36 @@ def websocket_get_settings(
         connection.send_result(msg["id"], manager.data.settings.to_dict())
 
 
+@websocket_api.websocket_command(
+    {vol.Required("type"): "chore_race/get_recurrence_rules"}
+)
+@callback
+def websocket_get_recurrence_rules(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return recurrence rules for the planner."""
+    if (manager := _require_manager(hass, connection, msg)) is not None:
+        connection.send_result(
+            msg["id"], list(manager.data.recurrence_rules.values())
+        )
+
+
+@websocket_api.websocket_command({vol.Required("type"): "chore_race/get_rewards"})
+@callback
+def websocket_get_rewards(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Return all rewards for the admin planner."""
+    if (manager := _require_manager(hass, connection, msg)) is not None:
+        connection.send_result(
+            msg["id"], manager.rewards_snapshot(include_inactive=True)
+        )
+
+
 @websocket_api.require_admin
 @websocket_api.async_response
 @websocket_api.websocket_command(
@@ -95,6 +161,8 @@ def websocket_get_settings(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order", default=0): int,
+        vol.Optional("role", default="child"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks", default=False): bool,
     }
 )
 async def websocket_create_participant(
@@ -112,6 +180,8 @@ async def websocket_create_participant(
             person_entity_id=msg.get("person_entity_id"),
             avatar=msg.get("avatar"),
             sort_order=msg["sort_order"],
+            role=msg["role"],
+            can_do_restricted_tasks=msg["can_do_restricted_tasks"],
         )
     except ChoreRaceError as err:
         _send_domain_error(connection, msg, err)
@@ -130,6 +200,8 @@ async def websocket_create_participant(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order"): int,
+        vol.Optional("role"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks"): bool,
     }
 )
 async def websocket_update_participant(
@@ -149,6 +221,8 @@ async def websocket_update_participant(
             "person_entity_id",
             "avatar",
             "sort_order",
+            "role",
+            "can_do_restricted_tasks",
         )
         if key in msg
     }
@@ -218,10 +292,81 @@ async def websocket_create_chore_type(
 @websocket_api.async_response
 @websocket_api.websocket_command(
     {
+        vol.Required("type"): "chore_race/update_chore_type",
+        vol.Required("chore_type_id"): _ID,
+        vol.Optional("name"): _NAME,
+        vol.Optional("default_race_points"): _POINTS,
+        vol.Optional("icon"): _OPTIONAL_TEXT,
+        vol.Optional("image"): _OPTIONAL_TEXT,
+        vol.Optional("streak_enabled"): bool,
+        vol.Optional("streak_max_bonus"): _POINTS,
+        vol.Optional("default_copilot_points"): _POINTS,
+        vol.Optional("active"): bool,
+        vol.Optional("difficulty"): vol.Any(
+            None, vol.In([item.value for item in Difficulty])
+        ),
+        vol.Optional("adult_only"): bool,
+        vol.Optional("confirmation_required"): bool,
+    }
+)
+async def websocket_update_chore_type(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update a chore type from an admin planner."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value
+        for key, value in msg.items()
+        if key not in {"id", "type", "chore_type_id"}
+    }
+    try:
+        chore_type = await manager.async_update_chore_type(
+            msg["chore_type_id"], **changes
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], chore_type.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_chore_type",
+        vol.Required("chore_type_id"): _ID,
+    }
+)
+async def websocket_delete_chore_type(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete an unused chore type."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_chore_type(msg["chore_type_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
         vol.Required("type"): "chore_race/create_task",
         vol.Required("chore_type_id"): _ID,
         vol.Required("date"): vol.Coerce(date.fromisoformat),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("race_points"): _POINTS,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("source", default=TaskSource.MANUAL.value): vol.Coerce(
@@ -245,6 +390,7 @@ async def websocket_create_task(
             msg["chore_type_id"],
             msg["date"],
             area_id=msg.get("area_id"),
+            floor_id=msg.get("floor_id"),
             race_points=msg.get("race_points"),
             preferred_participant_id=msg.get("preferred_participant_id"),
             source=msg["source"],
@@ -255,6 +401,115 @@ async def websocket_create_task(
         _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], task.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/update_task",
+        vol.Required("task_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("date"): vol.Coerce(date.fromisoformat),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
+        vol.Optional("race_points"): _POINTS,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("blocked"): bool,
+    }
+)
+async def websocket_update_task(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update an untouched open task."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value
+        for key, value in msg.items()
+        if key not in {"id", "type", "task_id"}
+    }
+    try:
+        task = await manager.async_update_task(msg["task_id"], **changes)
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], task.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_task",
+        vol.Required("task_id"): _ID,
+    }
+)
+async def websocket_delete_task(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete an untouched open task."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_task(msg["task_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/create_recurrence_rule",
+        vol.Required("chore_type_id"): _ID,
+        vol.Required("start_date"): vol.Coerce(date.fromisoformat),
+        vol.Required("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
+        vol.Optional("interval", default=1): vol.All(
+            int, vol.Range(min=1, max=365)
+        ),
+        vol.Optional("weekdays", default=[]): vol.All(
+            [vol.All(int, vol.Range(min=0, max=6))], vol.Length(max=7)
+        ),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+    }
+)
+async def websocket_create_recurrence_rule(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Create and materialize a recurrence rule from the planner."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        rule = await manager.async_create_recurrence_rule(
+            msg["chore_type_id"],
+            msg["start_date"],
+            frequency=msg["frequency"],
+            interval=msg["interval"],
+            weekdays=msg["weekdays"],
+            area_id=msg.get("area_id"),
+            floor_id=msg.get("floor_id"),
+            preferred_participant_id=msg.get("preferred_participant_id"),
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], rule)
 
 
 @websocket_api.require_admin
@@ -296,15 +551,191 @@ async def websocket_update_settings(
     connection.send_result(msg["id"], settings.to_dict())
 
 
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/update_recurrence_rule",
+        vol.Required("rule_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("start_date"): vol.Coerce(date.fromisoformat),
+        vol.Optional("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
+        vol.Optional("interval"): vol.All(int, vol.Range(min=1, max=365)),
+        vol.Optional("weekdays"): vol.All(
+            [vol.All(int, vol.Range(min=0, max=6))], vol.Length(max=7)
+        ),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("active"): bool,
+    }
+)
+async def websocket_update_recurrence_rule(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update or deactivate a recurrence rule."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value for key, value in msg.items() if key not in {"id", "type", "rule_id"}
+    }
+    try:
+        rule = await manager.async_update_recurrence_rule(
+            msg["rule_id"], **changes
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], rule)
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_recurrence_rule",
+        vol.Required("rule_id"): _ID,
+    }
+)
+async def websocket_delete_recurrence_rule(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete a recurrence rule without deleting generated tasks."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_recurrence_rule(msg["rule_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/create_reward",
+        vol.Required("name"): _NAME,
+        vol.Optional("icon", default="mdi:gift-outline"): vol.All(
+            str, vol.Length(max=100)
+        ),
+        vol.Optional("image"): _OPTIONAL_TEXT,
+        vol.Optional("sort_order", default=0): int,
+    }
+)
+async def websocket_create_reward(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Create a champion reward."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        reward = await manager.async_create_reward(
+            msg["name"],
+            icon=msg["icon"],
+            image=msg.get("image"),
+            sort_order=msg["sort_order"],
+        )
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], reward.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/update_reward",
+        vol.Required("reward_id"): _ID,
+        vol.Optional("name"): _NAME,
+        vol.Optional("icon"): vol.All(str, vol.Length(max=100)),
+        vol.Optional("image"): _OPTIONAL_TEXT,
+        vol.Optional("active"): bool,
+        vol.Optional("sort_order"): int,
+    }
+)
+async def websocket_update_reward(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Update or deactivate a champion reward."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    changes = {
+        key: value
+        for key, value in msg.items()
+        if key not in {"id", "type", "reward_id"}
+    }
+    try:
+        reward = await manager.async_update_reward(msg["reward_id"], **changes)
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], reward.to_dict())
+
+
+@websocket_api.require_admin
+@websocket_api.async_response
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "chore_race/delete_reward",
+        vol.Required("reward_id"): _ID,
+    }
+)
+async def websocket_delete_reward(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Delete one unused champion reward."""
+    manager = _require_manager(hass, connection, msg)
+    if manager is None:
+        return
+    try:
+        await manager.async_delete_reward(msg["reward_id"])
+    except ChoreRaceError as err:
+        _send_domain_error(connection, msg, err)
+        return
+    connection.send_result(msg["id"], {})
+
+
 def async_register_planner_websocket_commands(hass: HomeAssistant) -> None:
     """Register read and admin-only planner commands."""
     for command in (
         websocket_get_areas,
+        websocket_get_floors,
         websocket_get_settings,
+        websocket_get_recurrence_rules,
+        websocket_get_rewards,
         websocket_create_participant,
         websocket_update_participant,
         websocket_create_chore_type,
+        websocket_update_chore_type,
+        websocket_delete_chore_type,
         websocket_create_task,
+        websocket_update_task,
+        websocket_delete_task,
+        websocket_create_recurrence_rule,
         websocket_update_settings,
+        websocket_update_recurrence_rule,
+        websocket_delete_recurrence_rule,
+        websocket_create_reward,
+        websocket_update_reward,
+        websocket_delete_reward,
     ):
         websocket_api.async_register_command(hass, command)

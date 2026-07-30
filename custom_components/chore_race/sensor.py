@@ -38,6 +38,13 @@ SENSORS = (
         value_fn=lambda manager: manager.completed_tasks_today(),
     ),
     ChoreRaceSensorDescription(
+        key="automatic_tasks_today",
+        translation_key="automatic_tasks_today",
+        icon="mdi:robot-outline",
+        native_unit_of_measurement="tasks",
+        value_fn=lambda manager: manager.automatic_tasks_today(),
+    ),
+    ChoreRaceSensorDescription(
         key="week_leader",
         translation_key="week_leader",
         icon="mdi:trophy-outline",

@@ -4,8 +4,13 @@
     "update_participant": {"service": "mdi:account-edit"},
     "create_chore_type": {"service": "mdi:shape-plus"},
     "update_chore_type": {"service": "mdi:shape"},
+    "delete_chore_type": {"service": "mdi:shape-minus"},
     "create_task": {"service": "mdi:clipboard-plus"},
+    "ensure_task": {"service": "mdi:clipboard-check-multiple-outline"},
+    "update_task": {"service": "mdi:clipboard-edit"},
     "complete_task": {"service": "mdi:check-bold"},
+    "reset_race": {"service": "mdi:restart-alert"},
+    "remove_race_participant": {"service": "mdi:account-minus"},
     "undo_completion": {"service": "mdi:undo"},
     "delete_task": {"service": "mdi:delete"}
   }

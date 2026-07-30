@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
-
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError, Unauthorized
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     DOMAIN,
@@ -20,12 +21,21 @@ from .const import (
     SERVICE_COMPLETE_TASK,
     SERVICE_CREATE_CHORE_TYPE,
     SERVICE_CREATE_PARTICIPANT,
-    SERVICE_CREATE_TASK,
     SERVICE_CREATE_RECURRENCE_RULE,
+    SERVICE_CREATE_TASK,
+    SERVICE_DELETE_CHORE_TYPE,
+    SERVICE_DELETE_RECURRENCE_RULE,
     SERVICE_DELETE_TASK,
+    SERVICE_ENSURE_TASK,
+    SERVICE_REMOVE_RACE_PARTICIPANT,
+    SERVICE_RESET_RACE,
+    SERVICE_START_RACE,
+    SERVICE_STOP_RACE,
     SERVICE_UNDO_COMPLETION,
     SERVICE_UPDATE_CHORE_TYPE,
     SERVICE_UPDATE_PARTICIPANT,
+    SERVICE_UPDATE_RECURRENCE_RULE,
+    SERVICE_UPDATE_TASK,
 )
 from .errors import ChoreRaceError
 from .manager import ChoreRaceManager
@@ -35,6 +45,10 @@ from .storage import ChoreRaceStore
 from .websocket import async_register_websocket_commands
 
 type ChoreRaceConfigEntry = ConfigEntry[ChoreRaceManager]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+ASSET_URL = "/chore-race-assets"
+ASSET_PATH = Path(__file__).parent / "task_icons"
 
 _ID = vol.All(str, vol.Length(min=1, max=64))
 _NAME = vol.All(str, vol.Strip, vol.Length(min=1, max=100))
@@ -47,6 +61,8 @@ CREATE_PARTICIPANT_SCHEMA = vol.Schema(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order", default=0): vol.Coerce(int),
+        vol.Optional("role", default="child"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks", default=False): cv.boolean,
     }
 )
 UPDATE_PARTICIPANT_SCHEMA = vol.Schema(
@@ -57,6 +73,8 @@ UPDATE_PARTICIPANT_SCHEMA = vol.Schema(
         vol.Optional("person_entity_id"): _OPTIONAL_TEXT,
         vol.Optional("avatar"): _OPTIONAL_TEXT,
         vol.Optional("sort_order"): vol.Coerce(int),
+        vol.Optional("role"): vol.In(["child", "adult"]),
+        vol.Optional("can_do_restricted_tasks"): cv.boolean,
     }
 )
 CREATE_CHORE_TYPE_SCHEMA = vol.Schema(
@@ -93,11 +111,15 @@ UPDATE_CHORE_TYPE_SCHEMA = vol.Schema(
         vol.Optional("confirmation_required"): cv.boolean,
     }
 )
+DELETE_CHORE_TYPE_SCHEMA = vol.Schema(
+    {vol.Required("chore_type_id"): _ID}
+)
 CREATE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("chore_type_id"): _ID,
         vol.Required("date"): cv.date,
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("race_points"): _POINTS,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
         vol.Optional("source", default=TaskSource.MANUAL.value): vol.In(
@@ -109,22 +131,89 @@ CREATE_TASK_SCHEMA = vol.Schema(
         vol.Optional("blocked", default=False): cv.boolean,
     }
 )
+ENSURE_TASK_SCHEMA = vol.Schema(
+    {
+        vol.Required("chore_type_id"): _ID,
+        vol.Optional("date"): cv.date,
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
+        vol.Optional("race_points"): _POINTS,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional(
+            "source", default=TaskSource.AUTOMATION.value
+        ): vol.In([TaskSource.ENTITY.value, TaskSource.AUTOMATION.value]),
+        vol.Required("source_entity_id"): cv.entity_id,
+        vol.Optional("deduplication_key"): _OPTIONAL_TEXT,
+    }
+)
 CREATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
     {
         vol.Required("chore_type_id"): _ID,
         vol.Required("start_date"): cv.date,
-        vol.Required("frequency"): vol.In(["days", "monthly", "yearly"]),
+        vol.Required("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
         vol.Optional("interval", default=1): vol.All(
             vol.Coerce(int), vol.Range(min=1, max=365)
         ),
+        vol.Optional("weekdays", default=[]): vol.All(
+            [vol.All(vol.Coerce(int), vol.Range(min=0, max=6))],
+            vol.Length(max=7),
+        ),
         vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
         vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+    }
+)
+UPDATE_TASK_SCHEMA = vol.Schema(
+    {
+        vol.Required("task_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("date"): cv.date,
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
+        vol.Optional("race_points"): _POINTS,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("blocked"): cv.boolean,
+    }
+)
+UPDATE_RECURRENCE_RULE_SCHEMA = vol.Schema(
+    {
+        vol.Required("rule_id"): _ID,
+        vol.Optional("chore_type_id"): _ID,
+        vol.Optional("start_date"): cv.date,
+        vol.Optional("frequency"): vol.In(
+            ["days", "weekdays", "monthly", "yearly", "completion_interval"]
+        ),
+        vol.Optional("interval"): vol.All(
+            vol.Coerce(int), vol.Range(min=1, max=365)
+        ),
+        vol.Optional("weekdays"): vol.All(
+            [vol.All(vol.Coerce(int), vol.Range(min=0, max=6))],
+            vol.Length(max=7),
+        ),
+        vol.Optional("area_id"): _OPTIONAL_TEXT,
+        vol.Optional("floor_id"): _OPTIONAL_TEXT,
+        vol.Optional("preferred_participant_id"): _OPTIONAL_TEXT,
+        vol.Optional("active"): cv.boolean,
+    }
+)
+DELETE_RECURRENCE_RULE_SCHEMA = vol.Schema({vol.Required("rule_id"): _ID})
+START_RACE_SCHEMA = vol.Schema({})
+STOP_RACE_SCHEMA = vol.Schema({})
+RESET_RACE_SCHEMA = vol.Schema({vol.Optional("race_id"): _ID})
+REMOVE_RACE_PARTICIPANT_SCHEMA = vol.Schema(
+    {
+        vol.Required("participant_id"): _ID,
+        vol.Optional("race_id"): _ID,
     }
 )
 COMPLETE_TASK_SCHEMA = vol.Schema(
     {
         vol.Required("task_id"): _ID,
         vol.Required("participant_id"): _ID,
+        vol.Optional("copilot_participant_id"): _ID,
+        vol.Optional("fair_play", default=False): cv.boolean,
     }
 )
 UNDO_COMPLETION_SCHEMA = vol.Schema({vol.Required("completion_id"): _ID})
@@ -135,8 +224,17 @@ ADMIN_SERVICES = {
     SERVICE_UPDATE_PARTICIPANT,
     SERVICE_CREATE_CHORE_TYPE,
     SERVICE_UPDATE_CHORE_TYPE,
+    SERVICE_DELETE_CHORE_TYPE,
     SERVICE_CREATE_TASK,
+    SERVICE_ENSURE_TASK,
+    SERVICE_UPDATE_TASK,
     SERVICE_CREATE_RECURRENCE_RULE,
+    SERVICE_UPDATE_RECURRENCE_RULE,
+    SERVICE_DELETE_RECURRENCE_RULE,
+    SERVICE_START_RACE,
+    SERVICE_STOP_RACE,
+    SERVICE_RESET_RACE,
+    SERVICE_REMOVE_RACE_PARTICIPANT,
     SERVICE_UNDO_COMPLETION,
     SERVICE_DELETE_TASK,
 }
@@ -144,6 +242,9 @@ ADMIN_SERVICES = {
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register actions and WebSocket commands independent of entry load."""
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(ASSET_URL, str(ASSET_PATH), cache_headers=True)]
+    )
     async_register_websocket_commands(hass)
     async_register_planner_websocket_commands(hass)
 
@@ -163,16 +264,43 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             elif call.service == SERVICE_UPDATE_CHORE_TYPE:
                 record_id = values.pop("chore_type_id")
                 result = await manager.async_update_chore_type(record_id, **values)
+            elif call.service == SERVICE_DELETE_CHORE_TYPE:
+                await manager.async_delete_chore_type(**values)
+                return {} if call.return_response else None
             elif call.service == SERVICE_CREATE_TASK:
                 task_date: date = values.pop("date")
                 result = await manager.async_create_task(
                     task_date=task_date, **values
                 )
+            elif call.service == SERVICE_ENSURE_TASK:
+                task_date = values.pop("date", manager.today())
+                result = await manager.async_ensure_task(
+                    task_date=task_date, **values
+                )
+            elif call.service == SERVICE_UPDATE_TASK:
+                record_id = values.pop("task_id")
+                result = await manager.async_update_task(record_id, **values)
             elif call.service == SERVICE_CREATE_RECURRENCE_RULE:
                 start_date: date = values.pop("start_date")
                 result = await manager.async_create_recurrence_rule(
                     start_date=start_date, **values
                 )
+            elif call.service == SERVICE_UPDATE_RECURRENCE_RULE:
+                rule_id = values.pop("rule_id")
+                result = await manager.async_update_recurrence_rule(
+                    rule_id, **values
+                )
+            elif call.service == SERVICE_DELETE_RECURRENCE_RULE:
+                await manager.async_delete_recurrence_rule(**values)
+                return {} if call.return_response else None
+            elif call.service == SERVICE_START_RACE:
+                result = await manager.async_start_race()
+            elif call.service == SERVICE_STOP_RACE:
+                result = await manager.async_stop_race()
+            elif call.service == SERVICE_RESET_RACE:
+                result = await manager.async_reset_race(**values)
+            elif call.service == SERVICE_REMOVE_RACE_PARTICIPANT:
+                result = await manager.async_remove_race_participant(**values)
             elif call.service == SERVICE_COMPLETE_TASK:
                 result = await manager.async_complete_task(**values)
             elif call.service == SERVICE_UNDO_COMPLETION:
@@ -193,8 +321,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_UPDATE_PARTICIPANT: UPDATE_PARTICIPANT_SCHEMA,
         SERVICE_CREATE_CHORE_TYPE: CREATE_CHORE_TYPE_SCHEMA,
         SERVICE_UPDATE_CHORE_TYPE: UPDATE_CHORE_TYPE_SCHEMA,
+        SERVICE_DELETE_CHORE_TYPE: DELETE_CHORE_TYPE_SCHEMA,
         SERVICE_CREATE_TASK: CREATE_TASK_SCHEMA,
+        SERVICE_ENSURE_TASK: ENSURE_TASK_SCHEMA,
+        SERVICE_UPDATE_TASK: UPDATE_TASK_SCHEMA,
         SERVICE_CREATE_RECURRENCE_RULE: CREATE_RECURRENCE_RULE_SCHEMA,
+        SERVICE_UPDATE_RECURRENCE_RULE: UPDATE_RECURRENCE_RULE_SCHEMA,
+        SERVICE_DELETE_RECURRENCE_RULE: DELETE_RECURRENCE_RULE_SCHEMA,
+        SERVICE_START_RACE: START_RACE_SCHEMA,
+        SERVICE_STOP_RACE: STOP_RACE_SCHEMA,
+        SERVICE_RESET_RACE: RESET_RACE_SCHEMA,
+        SERVICE_REMOVE_RACE_PARTICIPANT: REMOVE_RACE_PARTICIPANT_SCHEMA,
         SERVICE_COMPLETE_TASK: COMPLETE_TASK_SCHEMA,
         SERVICE_UNDO_COMPLETION: UNDO_COMPLETION_SCHEMA,
         SERVICE_DELETE_TASK: DELETE_TASK_SCHEMA,

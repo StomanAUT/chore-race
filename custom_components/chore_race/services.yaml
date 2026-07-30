@@ -18,10 +18,21 @@ create_participant:
       selector:
         number:
           mode: box
+    role:
+      default: child
+      selector:
+        select:
+          options:
+            - child
+            - adult
+    can_do_restricted_tasks:
+      default: false
+      selector:
+        boolean:
 
 create_recurrence_rule:
   name: Create recurrence rule
-  description: Schedule a chore every N days, monthly, or yearly.
+  description: Schedule a chore by calendar or since its last completion.
   fields:
     chore_type_id:
       required: true
@@ -37,8 +48,10 @@ create_recurrence_rule:
         select:
           options:
             - days
+            - weekdays
             - monthly
             - yearly
+            - completion_interval
     interval:
       default: 1
       selector:
@@ -46,10 +59,136 @@ create_recurrence_rule:
           min: 1
           max: 365
           mode: box
+    weekdays:
+      description: Monday 0 through Sunday 6; used with frequency weekdays.
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: "0"
+            - label: Tuesday
+              value: "1"
+            - label: Wednesday
+              value: "2"
+            - label: Thursday
+              value: "3"
+            - label: Friday
+              value: "4"
+            - label: Saturday
+              value: "5"
+            - label: Sunday
+              value: "6"
     area_id:
       selector:
         area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
     preferred_participant_id:
+      selector:
+        text:
+
+update_recurrence_rule:
+  name: Update recurrence rule
+  description: Update or deactivate a recurrence rule; existing tasks remain unchanged.
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+    chore_type_id:
+      selector:
+        text:
+    start_date:
+      selector:
+        date:
+    frequency:
+      selector:
+        select:
+          options:
+            - days
+            - weekdays
+            - monthly
+            - yearly
+            - completion_interval
+    interval:
+      selector:
+        number:
+          min: 1
+          max: 365
+          mode: box
+    weekdays:
+      description: Monday 0 through Sunday 6; used with frequency weekdays.
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: Monday
+              value: "0"
+            - label: Tuesday
+              value: "1"
+            - label: Wednesday
+              value: "2"
+            - label: Thursday
+              value: "3"
+            - label: Friday
+              value: "4"
+            - label: Saturday
+              value: "5"
+            - label: Sunday
+              value: "6"
+    area_id:
+      selector:
+        area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
+    preferred_participant_id:
+      selector:
+        text:
+    active:
+      selector:
+        boolean:
+
+delete_recurrence_rule:
+  name: Delete recurrence rule
+  description: Delete a recurrence rule while preserving tasks it already created.
+  fields:
+    rule_id:
+      required: true
+      selector:
+        text:
+
+start_race:
+  name: Start race
+  description: Start a race using the configured duration.
+
+stop_race:
+  name: Stop race
+  description: Finish the currently running race.
+
+reset_race:
+  name: Reset race
+  description: Revert this race's scores, reopen its tasks and restore the active roster.
+  fields:
+    race_id:
+      description: Optional race ID; defaults to the latest race.
+      selector:
+        text:
+
+remove_race_participant:
+  name: Remove participant
+  description: Deactivate a participant globally and revert their affected completions in the selected race. Historical records remain stored.
+  fields:
+    participant_id:
+      required: true
+      selector:
+        text:
+    race_id:
+      description: Optional race ID; defaults to the latest race.
       selector:
         text:
 
@@ -78,6 +217,15 @@ update_participant:
       selector:
         number:
           mode: box
+    role:
+      selector:
+        select:
+          options:
+            - child
+            - adult
+    can_do_restricted_tasks:
+      selector:
+        boolean:
 
 create_chore_type:
   name: Create chore type
@@ -151,9 +299,37 @@ update_chore_type:
           min: 0
           max: 1000
           mode: box
+    icon:
+      selector:
+        icon:
+    image:
+      selector:
+        text:
+    difficulty:
+      selector:
+        select:
+          options:
+            - easy
+            - medium
+            - hard
+    adult_only:
+      selector:
+        boolean:
+    confirmation_required:
+      selector:
+        boolean:
     active:
       selector:
         boolean:
+
+delete_chore_type:
+  name: Delete chore type
+  description: Permanently delete a chore type that has no task or recurrence references.
+  fields:
+    chore_type_id:
+      required: true
+      selector:
+        text:
 
 create_task:
   name: Create task
@@ -170,7 +346,12 @@ create_task:
     area_id:
       selector:
         area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
     race_points:
+      description: Base points per room; floor tasks multiply this by their assigned room count.
       selector:
         number:
           min: 0
@@ -193,9 +374,90 @@ create_task:
       selector:
         entity:
 
+ensure_task:
+  name: Ensure automation task
+  description: Create one idempotent task from an entity or automation trigger.
+  fields:
+    chore_type_id:
+      required: true
+      selector:
+        text:
+    date:
+      description: Defaults to today in Home Assistant's configured timezone.
+      selector:
+        date:
+    area_id:
+      selector:
+        area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
+    race_points:
+      description: Optional base points per room override.
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    preferred_participant_id:
+      selector:
+        text:
+    source:
+      default: automation
+      selector:
+        select:
+          options:
+            - automation
+            - entity
+    source_entity_id:
+      required: true
+      description: Entity that triggered or owns this task.
+      selector:
+        entity:
+    deduplication_key:
+      description: Optional stable event key; otherwise a daily key is derived.
+      selector:
+        text:
+
+update_task:
+  name: Update task
+  description: Update an untouched open task outside a running race.
+  fields:
+    task_id:
+      required: true
+      selector:
+        text:
+    chore_type_id:
+      selector:
+        text:
+    date:
+      selector:
+        date:
+    area_id:
+      selector:
+        area:
+    floor_id:
+      description: Alternative to area_id for a task covering an entire floor.
+      selector:
+        floor:
+    race_points:
+      description: Base points per room; floor tasks recalculate their total.
+      selector:
+        number:
+          min: 0
+          max: 1000
+          mode: box
+    preferred_participant_id:
+      selector:
+        text:
+    blocked:
+      selector:
+        boolean:
+
 complete_task:
   name: Complete task
-  description: Complete an open task once and award one normal point.
+  description: Complete an open task and optionally apply race-only teamwork bonuses.
   fields:
     task_id:
       required: true
@@ -205,6 +467,13 @@ complete_task:
       required: true
       selector:
         text:
+    copilot_participant_id:
+      selector:
+        text:
+    fair_play:
+      default: false
+      selector:
+        boolean:
 
 undo_completion:
   name: Undo completion

@@ -14,12 +14,70 @@ Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 | `chore_race/get_participants` | Stable participant records |
 | `chore_race/get_chore_types` | Reusable chore definitions |
 | `chore_race/get_tasks` | Concrete task snapshots |
-| `chore_race/get_areas` | Current HA Area Registry records |
+| `chore_race/get_areas` | Current HA Area and Floor Registry records (`kind`) |
+| `chore_race/get_floors` | Current HA Floor Registry records |
 | `chore_race/get_settings` | Planner and race-ready settings |
 | `chore_race/get_state` | Compact team/today state |
 | `chore_race/get_leaderboard` | Current-week totals |
+| `chore_race/get_race_state` | Current/latest race, countdown, open tasks and leaderboard |
+| `chore_race/get_recurrence_rules` | Persisted recurrence rules |
+
+## Authenticated race completion
+
+Any authenticated household dashboard may report a task completed during an
+active race:
+
+```json
+{
+  "type": "chore_race/complete_race_task",
+  "task_id": "stable-task-id",
+  "participant_id": "stable-participant-id"
+}
+```
+
+The response is the refreshed race state. The server rejects inactive
+participants, adult-only permission violations, blocked or already completed
+tasks, and requests made without a running race.
 
 ## Admin mutations
+
+Race lifecycle mutations are admin-only:
+
+```json
+{"type": "chore_race/start_race"}
+```
+
+```json
+{"type": "chore_race/stop_race"}
+```
+
+Reset the current race, or pass `race_id` to reset a selected session:
+
+```json
+{
+  "type": "chore_race/reset_race",
+  "race_id": "optional-race-id"
+}
+```
+
+The session remains auditable with status `ready` and a `reset_at` timestamp.
+Only active completions belonging to that race are reverted and their tasks
+reopened. Normal points and points from other races are preserved.
+
+Remove a participant from the current race, or from a selected session:
+
+```json
+{
+  "type": "chore_race/remove_race_participant",
+  "participant_id": "stable-participant-id",
+  "race_id": "optional-race-id"
+}
+```
+
+This changes only the session's `participant_ids`; the global participant
+record remains active. Active completions in that race involving the removed
+participant as driver or copilot are reverted and their tasks reopened.
+Unrelated completions remain active.
 
 ### Create a participant
 
@@ -46,15 +104,117 @@ Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 
 ### Create a dated task
 
+Tasks may target either one Home Assistant area (`area_id`) or one Home
+Assistant floor (`floor_id`). The fields are mutually exclusive. Omit both for
+a household-wide task. `race_points`, when supplied, is the base value per
+room. For a floor assignment the manager multiplies it (or the chore type's
+default) by the number of Home Assistant areas currently assigned to the
+floor. The response exposes `base_race_points`, `points_multiplier`, and the
+final `race_points`.
+
 ```json
 {
   "type": "chore_race/create_task",
   "chore_type_id": "stable-type-id",
   "date": "2026-07-28",
-  "area_id": "kinderzimmer_arthur",
+  "floor_id": "erdgeschoss",
   "preferred_participant_id": "stable-participant-id"
 }
 ```
+
+### Update an open task
+
+```json
+{
+  "type": "chore_race/update_task",
+  "task_id": "stable-task-id",
+  "date": "2026-07-30",
+  "area_id": "wohnzimmer",
+  "floor_id": null,
+  "preferred_participant_id": "stable-participant-id",
+  "race_points": 4
+}
+```
+
+When changing the scope, clear the previous field explicitly: for example,
+send `area_id: null` together with a new `floor_id`. The manager validates IDs
+against Home Assistant's registries and rejects requests containing both.
+Changing an open task's location or base `race_points` recalculates its
+snapshotted total. A floor without assigned rooms is rejected.
+
+Only untouched open tasks can be updated or deleted. Tasks with completion
+history remain immutable, including after an undo. Untouched open tasks remain
+editable during a running race, and the live race queue reflects changes
+immediately.
+
+Chore types can be updated through `chore_race/update_chore_type`. Permanent
+deletion through `chore_race/delete_chore_type` is allowed only when no task or
+recurrence rule references the type; otherwise it must be deactivated.
+
+### Ensure a task from an automation or entity
+
+Home Assistant automations and entity integrations should call the
+`chore_race.ensure_task` action instead of `create_task`. It accepts the same
+location, participant and point fields, plus:
+
+- `source`: `automation` (default) or `entity`;
+- `source_entity_id`: required owner or triggering entity;
+- `deduplication_key`: optional stable identity for one external event.
+
+Without an explicit key, Chore Race derives one from source, source entity,
+chore type, task date and location. Repeating the action then returns the same
+task. An explicit key is preferable when multiple distinct events may occur on
+one day. The action response contains `created` and the complete `task` record.
+
+```yaml
+automation:
+  - alias: "Chore Race: Waschmaschine ist fertig"
+    triggers:
+      - trigger: state
+        entity_id: sensor.washing_machine_state
+        to: "finished"
+    actions:
+      - action: chore_race.ensure_task
+        response_variable: chore_race_result
+        data:
+          chore_type_id: "stable-type-id"
+          source: entity
+          source_entity_id: "{{ trigger.entity_id }}"
+          area_id: "utility_room"
+          deduplication_key: >-
+            {{ trigger.entity_id }}:{{ trigger.to_state.last_changed.isoformat() }}
+```
+
+If the automation is replayed for the same state change,
+`chore_race_result.created` is `false` and no duplicate is added. Omitting
+`date` schedules the task for today in Home Assistant's configured timezone.
+`area_id` and `floor_id` remain mutually exclusive.
+
+Every newly created task fires this Home Assistant event:
+
+```yaml
+event_type: chore_race_task_created
+data:
+  task_id: "stable-task-id"
+  source: entity
+  source_entity_id: sensor.washing_machine_state
+```
+
+An idempotent repeat call does not emit the event again. The
+`automatic_tasks_today` sensor and `chore_race/get_state` field report how many
+non-cancelled entity or automation tasks were created on the current local
+day.
+
+Recurring rules accept the same mutually exclusive `area_id` and `floor_id`
+fields. Every materialized task snapshots that assignment, so a rule such as
+“Boden wischen · Erdgeschoss · 1 Punkt pro Raum” produces one floor-wide task
+per due date and snapshots the then-current room multiplier.
+
+`frequency` accepts `days`, `weekdays`, `monthly`, `yearly` and
+`completion_interval`. Weekday rules include a `weekdays` array using Monday
+`0` through Sunday `6`. Completion intervals use `interval` as the number of
+local calendar days after the last active completion and suppress new
+materialization while an earlier generated task remains open.
 
 ### Update settings
 
@@ -69,5 +229,69 @@ Mutating planner commands use Home Assistant's `require_admin` WebSocket guard.
 ```
 
 Settings persist through Home Assistant's versioned integration store. Race
-configuration is exposed now, but Milestone 0.2 does not start a race or run a
-timer.
+configuration is also consumed by the Milestone 0.3 race engine.
+
+## Race WebSocket API
+
+Administrators start and stop a session with:
+
+```json
+{"type": "chore_race/start_race"}
+```
+
+```json
+{"type": "chore_race/stop_race"}
+```
+
+They can also reset the current or selected session and remove a participant
+from its local roster:
+
+```json
+{"type": "chore_race/reset_race", "race_id": "optional-race-id"}
+```
+
+```json
+{
+  "type": "chore_race/remove_race_participant",
+  "participant_id": "participant-id",
+  "race_id": "optional-race-id"
+}
+```
+
+During a running race an authenticated client completes a task with optional
+teamwork scoring:
+
+```json
+{
+  "type": "chore_race/complete_race_task",
+  "task_id": "task-id",
+  "participant_id": "driver-id",
+  "copilot_participant_id": "optional-copilot-id",
+  "fair_play": false
+}
+```
+
+`copilot_participant_id` and `fair_play: true` cannot be combined. The result
+is the updated race state including countdown, open tasks, a ranked scoring
+breakdown, the most recent completion and the champion after a unique win.
+
+## Reward API
+
+The planner reads and manages the ordered reward catalog through
+`chore_race/get_rewards`, `chore_race/create_reward`,
+`chore_race/update_reward` and `chore_race/delete_reward`. Mutations require a
+Home Assistant administrator.
+
+After a finished race, the shared household tablet records the unique
+champion's one-time choice with:
+
+```json
+{
+  "type": "chore_race/select_reward",
+  "race_id": "race-id",
+  "reward_id": "reward-id"
+}
+```
+
+The backend derives the champion, rejects ties, non-positive results, active
+races, inactive rewards and repeat selections.

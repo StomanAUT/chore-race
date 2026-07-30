@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "style": "friendly 3D clay, dark navy base with colorful accents",
+  "format": "PNG",
+  "size": 512,
+  "icons": [
+    {
+      "id": "tidy-up",
+      "label_de": "Aufräumen",
+      "file": "tidy-up.png",
+      "mdi_fallback": "mdi:package-variant"
+    },
+    {
+      "id": "mop-floor",
+      "label_de": "Boden wischen",
+      "file": "mop-floor.png",
+      "mdi_fallback": "mdi:broom"
+    },
+    {
+      "id": "dust",
+      "label_de": "Abstauben",
+      "file": "dust.png",
+      "mdi_fallback": "mdi:feather"
+    },
+    {
+      "id": "organic-waste",
+      "label_de": "Bio-Müll",
+      "file": "organic-waste.png",
+      "mdi_fallback": "mdi:trash-can"
+    },
+    {
+      "id": "general-waste",
+      "label_de": "Restmüll",
+      "file": "general-waste.png",
+      "mdi_fallback": "mdi:delete"
+    },
+    {
+      "id": "paper",
+      "label_de": "Papier",
+      "file": "paper.png",
+      "mdi_fallback": "mdi:file-document"
+    },
+    {
+      "id": "plastic",
+      "label_de": "Plastik",
+      "file": "plastic.png",
+      "mdi_fallback": "mdi:bottle-soda"
+    },
+    {
+      "id": "clean-bathroom",
+      "label_de": "Bad reinigen",
+      "file": "clean-bathroom.png",
+      "mdi_fallback": "mdi:shower"
+    },
+    {
+      "id": "clean-toilet",
+      "label_de": "WC reinigen",
+      "file": "clean-toilet.png",
+      "mdi_fallback": "mdi:toilet"
+    },
+    {
+      "id": "laundry",
+      "label_de": "Wäsche",
+      "file": "laundry.png",
+      "mdi_fallback": "mdi:washing-machine"
+    },
+    {
+      "id": "dishwasher",
+      "label_de": "Geschirrspüler ein-/ausräumen",
+      "file": "dishwasher.png",
+      "mdi_fallback": "mdi:dishwasher"
+    },
+    {
+      "id": "vacuum",
+      "label_de": "Staubsaugen",
+      "file": "vacuum.png",
+      "mdi_fallback": "mdi:vacuum"
+    },
+    {
+      "id": "clean-windows",
+      "label_de": "Fenster putzen",
+      "file": "clean-windows.png",
+      "mdi_fallback": "mdi:squeegee"
+    },
+    {
+      "id": "make-bed",
+      "label_de": "Bett machen",
+      "file": "make-bed.png",
+      "mdi_fallback": "mdi:bed"
+    },
+    {
+      "id": "cooking",
+      "label_de": "Kochen",
+      "file": "cooking.png",
+      "mdi_fallback": "mdi:pot-steam"
+    },
+    {
+      "id": "mow-lawn",
+      "label_de": "Rasen mähen",
+      "file": "mow-lawn.png",
+      "mdi_fallback": "mdi:lawn-mower"
+    },
+    {
+      "id": "feed-pets",
+      "label_de": "Tiere füttern",
+      "file": "feed-pets.png",
+      "mdi_fallback": "mdi:bowl-mix"
+    }
+  ]
+}
