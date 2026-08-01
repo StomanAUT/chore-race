@@ -110,6 +110,8 @@
           input { min-height:42px; box-sizing:border-box; padding:8px 11px;
             color:var(--primary-text-color); background:var(--card-background-color);
             border:1px solid var(--divider-color); border-radius:10px; font:inherit; }
+          input:focus-visible { outline:3px solid var(--primary-color);
+            outline-offset:2px; }
         </style>
         <div class="editor">
           <label>Maximale Breite (Pixel)
@@ -160,6 +162,7 @@
       this._fairPlay = false;
       this._actionBusy = false;
       this._actionError = undefined;
+      this._returnFocusTaskId = undefined;
       this._onMotionChange = () => this._render();
       this._onVisibilityChange = () => {
         if (!document.hidden) this._load();
@@ -310,13 +313,22 @@
           localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
           const day = localDate.toISOString().slice(0, 10);
           const todayTasks = tasks.filter((task) => task.date === day);
+          const overdueOpen = tasks.filter(
+            (task) => task.date < day && task.status === "open" && !task.blocked,
+          ).length;
           const completed = todayTasks.filter(
             (task) => task.status === "completed",
           ).length;
+          const openToday = todayTasks.filter(
+            (task) => task.status === "open" && !task.blocked,
+          ).length;
           state = {
-            open_tasks_today: todayTasks.length - completed,
+            open_tasks_today: overdueOpen + openToday,
             completed_tasks_today: completed,
-            team_progress: { completed, total: todayTasks.length },
+            team_progress: {
+              completed,
+              total: todayTasks.length + overdueOpen,
+            },
           };
         }
         if (!this._connected || generation !== this._requestGeneration) return;
@@ -472,6 +484,7 @@
       this.shadowRoot.querySelectorAll("[data-complete-task]").forEach((button) => {
         button.addEventListener("click", () => {
           this._selectedTaskId = button.dataset.completeTask;
+          this._returnFocusTaskId = button.dataset.completeTask;
           this._selectedParticipantId = undefined;
           this._selectedCopilotId = undefined;
           this._fairPlay = false;
@@ -511,16 +524,57 @@
       );
       this.shadowRoot.querySelector("[data-close-picker]")?.addEventListener(
         "click",
-        () => {
-          if (this._actionBusy) return;
-          this._selectedTaskId = undefined;
-          this._selectedParticipantId = undefined;
-          this._selectedCopilotId = undefined;
-          this._fairPlay = false;
-          this._actionError = undefined;
-          this._render();
-        },
+        () => this._closePicker(),
       );
+      const picker = this.shadowRoot.querySelector('[role="dialog"]');
+      if (picker) {
+        picker.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            this._closePicker();
+            return;
+          }
+          if (event.key !== "Tab") return;
+          const focusable = [
+            ...picker.querySelectorAll(
+              "button:not(:disabled),select:not(:disabled),input:not(:disabled)",
+            ),
+          ];
+          if (!focusable.length) return;
+          const first = focusable[0];
+          const last = focusable.at(-1);
+          if (event.shiftKey && event.target === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && event.target === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        });
+        queueMicrotask(() => {
+          const preferred =
+            picker.querySelector("[data-participant].selected") ||
+            picker.querySelector("[data-participant]:not(:disabled)") ||
+            picker.querySelector("[data-close-picker]");
+          preferred?.focus();
+        });
+      }
+    }
+
+    _closePicker() {
+      if (this._actionBusy) return;
+      const taskId = this._returnFocusTaskId;
+      this._selectedTaskId = undefined;
+      this._selectedParticipantId = undefined;
+      this._selectedCopilotId = undefined;
+      this._fairPlay = false;
+      this._actionError = undefined;
+      this._render();
+      queueMicrotask(() => {
+        this.shadowRoot
+          .querySelector(`[data-complete-task="${CSS.escape(taskId || "")}"]`)
+          ?.focus();
+      });
     }
 
     _remainingSeconds() {
@@ -751,6 +805,11 @@
                     <button class="complete" data-complete-task="${escapeHtml(task.id)}"
                       ${this._actionBusy || task.blocked ? "disabled" : ""}
                       aria-disabled="${this._actionBusy || task.blocked ? "true" : "false"}"
+                      aria-label="${escapeHtml(
+                        task.blocked
+                          ? `${task.name ?? "Aufgabe"} ist blockiert`
+                          : `${task.name ?? "Aufgabe"} als erledigt markieren`,
+                      )}"
                       title="${task.blocked ? "Erst den vorherigen Schritt erledigen" : "Aufgabe erledigen"}">
                       ${task.blocked ? "Blockiert" : "Erledigt"}</button>
                   </div>
@@ -765,7 +824,7 @@
       const participantPicker = this._selectedTaskId
         ? `<div class="picker-backdrop" role="presentation">
             <section class="picker" role="dialog" aria-modal="true"
-              aria-labelledby="race-picker-title">
+              aria-labelledby="race-picker-title" aria-describedby="race-picker-help">
               <div class="picker-heading">
                 <div><small>${running ? "RENNWERTUNG" : "ALLTAGSWERTUNG"}</small>
                   <h3 id="race-picker-title">${
@@ -774,7 +833,8 @@
                 <button class="close" data-close-picker aria-label="Schließen"
                   ${this._actionBusy ? "disabled" : ""}>×</button>
               </div>
-              <p class="picker-step"><strong>1</strong> Wer hat die Aufgabe erledigt?</p>
+              <p class="picker-step" id="race-picker-help"><strong>1</strong>
+                Wer hat die Aufgabe erledigt? Escape schließt dieses Fenster.</p>
               <div class="participant-grid">
                 ${this._participants.length
                   ? this._participants
@@ -790,6 +850,11 @@
                             )}</span>`;
                         return `<button data-participant="${escapeHtml(participant.id)}"
                           ${this._actionBusy || restricted ? "disabled" : ""}
+                          aria-pressed="${
+                            participant.id === this._selectedParticipantId
+                              ? "true"
+                              : "false"
+                          }"
                           class="${restricted ? "restricted" : ""} ${
                             participant.id === this._selectedParticipantId
                               ? "selected"
@@ -855,8 +920,8 @@
                       </button>`
                   : ""
               }
-              ${this._actionBusy ? `<p class="action-status">Punkte werden gespeichert …</p>` : ""}
-              ${this._actionError ? `<p class="action-error">${escapeHtml(this._actionError)}</p>` : ""}
+              ${this._actionBusy ? `<p class="action-status" role="status" aria-live="polite">Punkte werden gespeichert …</p>` : ""}
+              ${this._actionError ? `<p class="action-error" role="alert">${escapeHtml(this._actionError)}</p>` : ""}
             </section>
           </div>`
         : "";
@@ -940,7 +1005,7 @@
           <section class="team race-summary" aria-label="Rennstatus">
             <div class="team-copy">
               <span>${statusCopy.heading}</span>
-              <strong>${
+              <strong aria-live="polite" aria-atomic="true">${
                 status === "ready"
                   ? "Bereit"
                   : status === "running"
@@ -986,7 +1051,7 @@
           </div>
           ${
             this._actionError && !this._selectedTaskId
-              ? `<p class="action-error race-action-error">${escapeHtml(this._actionError)}</p>`
+              ? `<p class="action-error race-action-error" role="alert">${escapeHtml(this._actionError)}</p>`
               : ""
           }
           ${champion || lastReward || scoreFeedback}
@@ -1029,7 +1094,7 @@
           </footer>
           ${
             this._error
-              ? `<p class="error">Letzter Stand &middot; ${escapeHtml(this._error)}</p>`
+              ? `<p class="error" role="status">Letzter Stand &middot; ${escapeHtml(this._error)}</p>`
               : ""
           }
           ${participantPicker}
@@ -1252,6 +1317,9 @@
         .bonus-panel select { width:100%; min-height:46px; padding:8px 10px;
           color:var(--ink); background:var(--surface-raised);
           border:1px solid var(--line); border-radius:12px; font:inherit; }
+        .bonus-panel select:focus-visible,.fair-play-option input:focus-visible {
+          outline:3px solid color-mix(in srgb,var(--accent) 65%,white);
+          outline-offset:2px; }
         .fair-play-option { grid-template-columns:auto 1fr !important;
           align-items:center; padding:11px 12px; border:1px solid var(--line);
           border-radius:12px; background:var(--surface-raised); }
@@ -1334,6 +1402,9 @@
             max-height:none; overflow:visible; }
           .score-feedback { grid-template-columns:1fr; gap:2px; }
           .score-feedback small { white-space:normal; }
+          .picker-backdrop { padding:8px; }
+          .picker { max-height:calc(100dvh - 16px); padding:16px;
+            border-radius:18px; }
         }
         @container (max-width: 420px) {
           ha-card { padding: 16px; border-radius: 20px; }

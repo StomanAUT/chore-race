@@ -1821,19 +1821,19 @@ class ChoreRaceManager:
         }
 
     def _race_open_tasks(self) -> list[dict[str, Any]]:
-        """Return today's actionable tasks with stable presentation snapshots."""
+        """Return due and overdue actionable tasks with presentation snapshots."""
         today = self.today()
         tasks = sorted(
             (
                 task
                 for task in self._data.tasks.values()
-                if task.date == today
+                if task.date <= today
                 and task.status is TaskStatus.OPEN
                 and not task.blocked
                 and self._data.chore_types.get(task.chore_type_id) is not None
                 and self._data.chore_types[task.chore_type_id].active
             ),
-            key=lambda task: (task.created_at, task.id),
+            key=lambda task: (task.date, task.created_at, task.id),
         )
         return [
             {
@@ -1884,16 +1884,13 @@ class ChoreRaceManager:
         return task
 
     def _ensure_task_mutable(self, task: ChoreTask) -> None:
-        """Reject edits that could rewrite completion history."""
+        """Reject edits to non-open tasks or tasks with an active completion."""
         if task.chain_id is not None:
             raise ConflictError("Task chain steps are managed by their chain")
         if task.status is not TaskStatus.OPEN:
             raise ConflictError("Only open tasks can be changed")
-        if any(
-            completion.task_id == task.id
-            for completion in self._data.completions.values()
-        ):
-            raise ConflictError("Tasks with completion history cannot be changed")
+        if self._active_completion_for_task(task.id) is not None:
+            raise ConflictError("Tasks with an active completion cannot be changed")
 
     def _active_completion_for_task(self, task_id: str) -> Completion | None:
         return next(
@@ -1915,10 +1912,10 @@ class ChoreRaceManager:
         return start, start + timedelta(days=7)
 
     def open_tasks_today(self) -> int:
-        """Count today's available open tasks."""
+        """Count all due and overdue available open tasks."""
         today = self.today()
         return sum(
-            task.date == today
+            task.date <= today
             and task.status is TaskStatus.OPEN
             and not task.blocked
             for task in self._data.tasks.values()

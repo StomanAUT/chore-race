@@ -57,7 +57,7 @@ def _send_domain_error(
     msg: dict[str, Any],
     err: ChoreRaceError,
 ) -> None:
-    connection.send_error(msg["id"], "chore_race_error", str(err))
+    connection.send_error(msg["id"], err.code, str(err))
 
 
 @websocket_api.websocket_command({vol.Required("type"): "chore_race/get_areas"})

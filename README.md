@@ -1,141 +1,124 @@
-# Chore Race
+<p align="center">
+  <img src="brand_assets/icon@2x.png" width="112" height="112" alt="Chore Race trophy logo">
+</p>
 
-Chore Race is a local-first Home Assistant household planner that will grow
-into a family-friendly, gamified 30-minute chore race. The current 0.7
-milestone adds idempotent automation and entity helpers to the planner
-foundation: participants linked to Home Assistant persons, reusable chore
-types, dated and recurring tasks, completions, undo, scoring history, aggregate
-sensors and planner and race cards.
+<h1 align="center">Chore Race</h1>
 
-> Early development: storage schema and APIs may still change before 1.0.
+<p align="center">
+  A local-first Home Assistant household planner that turns everyday chores into a friendly family race.
+</p>
 
-## Installation
+<p align="center">
+  <strong>English</strong> · <a href="README.de.md">Deutsch</a>
+</p>
 
-### HACS
+> [!IMPORTANT]
+> Chore Race is under active development. Storage schemas and APIs may still
+> change before the stable 1.0 release. Create a Home Assistant backup before
+> every upgrade.
 
-1. Add `https://github.com/StomanAUT/chore-race` as a custom HACS integration
-   repository.
+## What it does
+
+Chore Race combines an adult-friendly planner with a responsive race card:
+
+- reuse Home Assistant persons, areas, and floors;
+- define reusable chore types with points, difficulty, and task artwork;
+- plan one-time tasks or recurring schedules;
+- organize dependent chores as task chains;
+- complete overdue and today's open tasks during normal daily use;
+- run a configurable family race with driver, copilot, fair-play, and streak
+  scoring;
+- undo completions while retaining an audit history;
+- manage rewards and view aggregate Home Assistant sensors.
+
+Floor-wide tasks multiply their base race points by the number of Home
+Assistant areas assigned to that floor.
+
+<p align="center">
+  <img src="custom_components/chore_race/task_icons/mop-floor.png" width="72" height="72" alt="Illustration of a floor mop">
+  &nbsp;
+  <img src="custom_components/chore_race/task_icons/dishwasher.png" width="72" height="72" alt="Illustration of a dishwasher">
+  &nbsp;
+  <img src="custom_components/chore_race/task_icons/tidy-up.png" width="72" height="72" alt="Illustration of a box for tidying up">
+</p>
+
+## Quick start
+
+1. In HACS, add `https://github.com/StomanAUT/chore-race` as a custom
+   **Integration** repository.
 2. Install **Chore Race** and restart Home Assistant.
-3. Add **Chore Race** from **Settings → Devices & services → Add integration**.
+3. Go to **Settings → Devices & services → Add integration** and add
+   **Chore Race**.
+4. Install the two dashboard card resources as described in
+   [Installation and upgrades](docs/installation.md).
+5. Add a planner card and a race card to a dashboard:
 
-### Manual
+```yaml
+type: custom:chore-race-planner-card
+title: Chore Race Planner
+max_width: 960
+accent_color: "#74829a"
+```
 
-Copy `custom_components/chore_race` into the Home Assistant configuration
-directory and restart Home Assistant. Add **Chore Race** from **Settings →
-Devices & services → Add integration**. Configuration through
-`configuration.yaml` is not supported. Only one instance is allowed.
+```yaml
+type: custom:chore-race-card
+title: Family Grand Prix
+target_points: 12
+max_width: 820
+accent_color: "#74829a"
+```
 
-The integration does not create household-specific seed data. Participants and
-chore types are created through Actions or the planner, so names, rooms and
-point values remain fully configurable.
+The integration is configured through the Home Assistant UI. Only one instance
+is supported; do not add it to `configuration.yaml`.
+
+## Documentation
+
+- [User guide](docs/user-guide.md)
+- [Installation and upgrades](docs/installation.md)
+- [Configuration examples](docs/examples.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Architecture](docs/architecture.md)
+- [Planner API](docs/planner-api.md)
+
+German documentation:
+[Bedienungsanleitung](docs/bedienungsanleitung.md) ·
+[Deutsche Projektübersicht](README.de.md)
 
 ## Core rules
 
-- Tasks are free for any active participant. A preferred participant is only
-  metadata.
-- Outside a race, every completion awards exactly one configurable normal point.
-- A task snapshots its race points when it is created.
-- A completion snapshots every point component actually awarded.
-- One concrete task can have only one active completion.
-- Undo keeps the completion as a reverted audit record and reopens the task.
+- Any active participant can complete any permitted open task. A preferred
+  participant is a suggestion, not an assignment.
+- Outside a race, every completion awards the configured normal score.
+- Tasks keep a snapshot of their race points when created.
+- A concrete task can have only one active completion.
+- Undo reopens the task and keeps the reverted completion in the audit history.
 - Team progress counts completed tasks, not points.
-- Home Assistant Area Registry IDs are referenced instead of duplicating rooms.
-- Recurrence rules support intervals in days as well as monthly and yearly
-  schedules.
+- Copilot and fair-play bonuses cannot be combined for the same completion.
+- Completed tasks and tasks with active completion history are protected from
+  editing and deletion. Reverted standalone tasks can be changed again.
 
-## Actions
+## Automations
 
-Management actions require a Home Assistant administrator when called by a
-logged-in user. Calls from trusted Home Assistant automations have no user
-context and remain supported.
+The integration provides Home Assistant actions for participants, chore types,
+tasks, recurrence rules, races, and completions. `chore_race.ensure_task` is
+intended for automations: retries with the same deduplication key return the
+existing task instead of creating a duplicate.
 
-- `chore_race.create_participant`
-- `chore_race.update_participant`
-- `chore_race.create_chore_type`
-- `chore_race.update_chore_type`
-- `chore_race.delete_chore_type`
-- `chore_race.create_task`
-- `chore_race.ensure_task`
-- `chore_race.update_task`
-- `chore_race.create_recurrence_rule`
-- `chore_race.complete_task`
-- `chore_race.undo_completion`
-- `chore_race.delete_task`
-
-Action calls can request response data to retrieve the generated stable IDs.
-`chore_race.ensure_task` is intended for automations and entity integrations:
-retries with the same deduplication key return the existing task instead of
-creating duplicates.
-
-## Entities and API
-
-The integration exposes open tasks today, completed tasks today, automatically
-created tasks today and the current week leader as event-driven sensors. Large
-task collections are deliberately not placed in entity attributes.
-
-Authenticated read-only WebSocket commands:
-
-- `chore_race/get_state`
-- `chore_race/get_tasks`
-- `chore_race/get_participants`
-- `chore_race/get_chore_types`
-- `chore_race/get_leaderboard`
-- `chore_race/get_areas`
-- `chore_race/get_settings`
-
-Admin-only planner commands:
-
-- `chore_race/create_participant`
-- `chore_race/update_participant`
-- `chore_race/create_chore_type`
-- `chore_race/update_chore_type`
-- `chore_race/delete_chore_type`
-- `chore_race/create_task`
-- `chore_race/update_task`
-- `chore_race/delete_task`
-- `chore_race/create_recurrence_rule`
-- `chore_race/update_settings`
-
-These commands are the stable backend boundary for the adult planner. They use
-Home Assistant authentication and its built-in admin permission checks rather
-than a parallel account or role system.
-
-## Architecture
-
-`models.py` owns serialization-safe domain records, `storage.py` wraps the
-versioned Home Assistant `Store`, `scoring.py` is the single scoring policy,
-and `manager.py` owns validated atomic mutations and aggregation. Home
-Assistant actions, WebSocket commands and sensors are adapters around that
-manager. No polling coordinator is used because all changes are local events.
-
-Storage reserves versioned top-level collections for race sessions, recurrence
-rules, task chains and rewards. Completion records reserve separate driver,
-copilot, fair-play and streak snapshots. Race scoring will enforce the product
-rule that copilot and fair-play cannot both apply.
-
-See [docs/architecture.md](docs/architecture.md) and
-[docs/planner-api.md](docs/planner-api.md) for the current semantics and API.
+See [Configuration examples](docs/examples.md) and
+[Planner API](docs/planner-api.md) for supported fields and commands.
 
 ## Development
 
-The test suite targets a Home Assistant development environment with
-`pytest-homeassistant-custom-component`. Run:
+The test suite uses `pytest-homeassistant-custom-component` and a separate
+temporary Home Assistant configuration:
 
 ```text
 pytest
 ruff check .
 ```
 
-Tests must use a separate temporary Home Assistant configuration and must never
-run against a production configuration.
+Never run the tests against a production Home Assistant configuration.
 
-## Roadmap
+## License
 
-1. 0.2 Planner UI and recurring tasks
-2. 0.3 Race engine and race scoring
-3. 0.4 Child-friendly tablet card
-4. 0.5 Rewards
-5. 0.6 Recurring tasks
-6. 0.7 Automation/entity helpers (current development branch)
-7. 0.8 General task chains (next)
-8. 1.0 Stable public family release
+Chore Race is available under the [MIT License](LICENSE).

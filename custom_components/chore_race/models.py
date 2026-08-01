@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -371,9 +372,11 @@ class TaskChain:
         chain_id = data.get("id", fallback_id)
         raw_steps = data.get("steps", {})
         if isinstance(raw_steps, list):
-            step_items = [
-                (step.get("id"), step) for step in raw_steps
-            ]
+            step_items: list[tuple[str | None, dict[str, Any]]] = []
+            for raw_step in raw_steps:
+                if not isinstance(raw_step, dict):
+                    raise ValueError("Task chain step must be a dictionary")
+                step_items.append((raw_step.get("id"), raw_step))
         elif isinstance(raw_steps, dict):
             step_items = list(raw_steps.items())
         else:
@@ -389,6 +392,10 @@ class TaskChain:
                 fallback_chain_id=chain_id,
                 fallback_order=index,
             )
+            if step.id in steps:
+                raise ValueError(
+                    f"Task chain step ID {step.id!r} must be unique"
+                )
             steps[step.id] = step
 
         return cls(
@@ -475,38 +482,100 @@ class ChoreRaceData:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
-        """Restore integration state."""
+        """Restore and validate integration state."""
+        root = _require_mapping(data, "Chore Race storage root")
         return cls(
-            schema_version=data.get("schema_version", 1),
-            participants={
-                key: Participant.from_dict(value)
-                for key, value in data.get("participants", {}).items()
-            },
-            chore_types={
-                key: ChoreType.from_dict(value)
-                for key, value in data.get("chore_types", {}).items()
-            },
-            tasks={
-                key: ChoreTask.from_dict(value)
-                for key, value in data.get("tasks", {}).items()
-            },
-            completions={
-                key: Completion.from_dict(value)
-                for key, value in data.get("completions", {}).items()
-            },
-            settings=Settings.from_dict(data.get("settings", {})),
-            race_sessions=data.get("race_sessions", {}),
-            recurrence_rules=data.get("recurrence_rules", {}),
-            task_chains={
-                key: TaskChain.from_dict(value, fallback_id=key)
-                for key, value in data.get("task_chains", {}).items()
-            },
-            rewards={
-                key: Reward.from_dict(value)
-                for key, value in data.get("rewards", {}).items()
-            },
-            reward_selections={
-                key: RewardSelection.from_dict(value)
-                for key, value in data.get("reward_selections", {}).items()
-            },
+            schema_version=root.get("schema_version", 1),
+            participants=_restore_keyed_records(
+                root, "participants", Participant.from_dict
+            ),
+            chore_types=_restore_keyed_records(
+                root, "chore_types", ChoreType.from_dict
+            ),
+            tasks=_restore_keyed_records(
+                root, "tasks", ChoreTask.from_dict
+            ),
+            completions=_restore_keyed_records(
+                root, "completions", Completion.from_dict
+            ),
+            settings=Settings.from_dict(
+                _require_mapping(root.get("settings", {}), "settings")
+            ),
+            race_sessions=_restore_dictionary_records(
+                root, "race_sessions"
+            ),
+            recurrence_rules=_restore_dictionary_records(
+                root, "recurrence_rules"
+            ),
+            task_chains=_restore_keyed_records(
+                root, "task_chains", TaskChain.from_dict
+            ),
+            rewards=_restore_keyed_records(
+                root, "rewards", Reward.from_dict
+            ),
+            reward_selections=_restore_keyed_records(
+                root, "reward_selections", RewardSelection.from_dict
+            ),
         )
+
+
+def _require_mapping(value: Any, label: str) -> dict[str, Any]:
+    """Return a string-keyed dictionary or reject damaged storage."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a dictionary")
+    for key in value:
+        if not isinstance(key, str):
+            raise ValueError(f"{label} keys must be strings")
+    return value
+
+
+def _restore_keyed_records[ModelT](
+    root: dict[str, Any],
+    collection_name: str,
+    loader: Callable[[dict[str, Any]], ModelT],
+) -> dict[str, ModelT]:
+    """Restore keyed records and reconcile legacy missing embedded IDs."""
+    raw_records = _require_mapping(
+        root.get(collection_name, {}), collection_name
+    )
+    restored: dict[str, ModelT] = {}
+    for key, raw_record in raw_records.items():
+        _validate_stable_id(key, f"{collection_name} key")
+        record = dict(
+            _require_mapping(
+                raw_record, f"{collection_name} record {key!r}"
+            )
+        )
+        embedded_id = record.get("id")
+        if embedded_id is None:
+            record["id"] = key
+        elif embedded_id != key:
+            raise ValueError(
+                f"{collection_name} record {key!r} has conflicting "
+                f"embedded ID {embedded_id!r}"
+            )
+        try:
+            restored[key] = loader(record)
+        except (KeyError, TypeError, ValueError) as err:
+            raise ValueError(
+                f"Invalid {collection_name} record {key!r}: {err}"
+            ) from err
+    return restored
+
+
+def _restore_dictionary_records(
+    root: dict[str, Any], collection_name: str
+) -> dict[str, dict[str, Any]]:
+    """Copy and validate collections whose records remain intentionally raw."""
+    raw_records = _require_mapping(
+        root.get(collection_name, {}), collection_name
+    )
+    restored: dict[str, dict[str, Any]] = {}
+    for key, raw_record in raw_records.items():
+        _validate_stable_id(key, f"{collection_name} key")
+        restored[key] = dict(
+            _require_mapping(
+                raw_record, f"{collection_name} record {key!r}"
+            )
+        )
+    return restored

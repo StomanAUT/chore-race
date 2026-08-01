@@ -10,7 +10,11 @@ import voluptuous as vol
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.exceptions import HomeAssistantError, Unauthorized
+from homeassistant.exceptions import (
+    HomeAssistantError,
+    ServiceValidationError,
+    Unauthorized,
+)
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.typing import ConfigType
@@ -311,7 +315,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             else:
                 raise HomeAssistantError("Unknown Chore Race action")
         except ChoreRaceError as err:
-            raise HomeAssistantError(str(err)) from err
+            raise ServiceValidationError(
+                str(err),
+                translation_domain=DOMAIN,
+                translation_key=err.code,
+            ) from err
         if not call.return_response:
             return None
         return result if isinstance(result, dict) else result.to_dict()
@@ -385,7 +393,11 @@ async def async_unload_entry(
 def _get_manager(hass: HomeAssistant) -> ChoreRaceManager:
     entries = hass.config_entries.async_entries(DOMAIN)
     if not entries or entries[0].runtime_data is None:
-        raise HomeAssistantError("Chore Race is not configured or loaded")
+        raise ServiceValidationError(
+            "Chore Race is not configured or loaded",
+            translation_domain=DOMAIN,
+            translation_key="not_loaded",
+        )
     return entries[0].runtime_data
 
 

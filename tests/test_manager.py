@@ -626,15 +626,42 @@ async def test_floor_without_assigned_rooms_is_rejected(manager, monkeypatch):
         )
 
 
-async def test_task_with_completion_history_cannot_be_changed(manager):
+async def test_reopened_task_with_inactive_completion_can_be_changed(manager):
     participant, _, task = await _base_records(manager)
     completion = await manager.async_complete_task(task.id, participant.id)
     await manager.async_undo_completion(completion.id)
 
-    with pytest.raises(ConflictError):
-        await manager.async_update_task(task.id, race_points=9)
-    with pytest.raises(ConflictError):
-        await manager.async_delete_task(task.id)
+    updated = await manager.async_update_task(task.id, race_points=9)
+    assert updated.race_points == 9
+
+    await manager.async_delete_task(task.id)
+    assert task.id not in manager.data.tasks
+    assert completion.id in manager.data.completions
+    assert completion.active is False
+
+
+async def test_overdue_open_tasks_remain_actionable(manager):
+    participant, chore_type, overdue = await _base_records(manager)
+    await manager.async_update_task(
+        overdue.id, date=manager.today() - timedelta(days=1)
+    )
+    today = await manager.async_create_task(chore_type.id, manager.today())
+    future = await manager.async_create_task(
+        chore_type.id, manager.today() + timedelta(days=1)
+    )
+
+    state = manager.race_state()
+    assert [task["id"] for task in state["open_tasks"]] == [
+        overdue.id,
+        today.id,
+    ]
+    assert manager.open_tasks_today() == 2
+
+    completion = await manager.async_complete_task(overdue.id, participant.id)
+    assert completion.task_id == overdue.id
+    assert future.id not in {
+        task["id"] for task in manager.race_state()["open_tasks"]
+    }
 
 
 async def test_untouched_open_tasks_can_change_during_running_race(manager):

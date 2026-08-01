@@ -12,6 +12,23 @@
       "single_instance_allowed": "Only one Chore Race instance is allowed."
     }
   },
+  "exceptions": {
+    "not_loaded": {
+      "message": "Chore Race is not configured or loaded."
+    },
+    "not_found": {
+      "message": "The referenced Chore Race record was not found."
+    },
+    "conflict": {
+      "message": "The request conflicts with the current Chore Race state."
+    },
+    "validation_error": {
+      "message": "The request violates a Chore Race rule."
+    },
+    "chore_race_error": {
+      "message": "Chore Race could not perform the request."
+    }
+  },
   "entity": {
     "sensor": {
       "open_tasks": {

@@ -89,6 +89,8 @@
           input { min-height:42px; box-sizing:border-box; padding:8px 11px;
             color:var(--primary-text-color); background:var(--card-background-color);
             border:1px solid var(--divider-color); border-radius:10px; font:inherit; }
+          input:focus-visible { outline:3px solid var(--primary-color);
+            outline-offset:2px; }
         </style>
         <div class="editor">
           <label>Maximale Breite (Pixel)
@@ -1285,11 +1287,12 @@
               <h2>${escapeHtml(this._config.title || "Chore Race Planer")}</h2>
               <p class="subtitle">Familie, Aufgaben und Zeitpläne an einem Ort.</p></div>
             <button class="refresh" data-action="refresh" title="Neu laden"
+              aria-label="Planerdaten neu laden"
               ${disabled}>↻</button>
           </header>
-          ${this._loading ? '<div class="loading">Live-Daten werden geladen …</div>' : ""}
-          ${this._notice ? `<p class="notice">${escapeHtml(this._notice)}</p>` : ""}
-          ${this._error ? `<p class="error">${escapeHtml(this._error)}</p>` : ""}
+          ${this._loading ? '<div class="loading" role="status" aria-live="polite">Live-Daten werden geladen …</div>' : ""}
+          ${this._notice ? `<p class="notice" role="status" aria-live="polite">${escapeHtml(this._notice)}</p>` : ""}
+          ${this._error ? `<p class="error" role="alert">${escapeHtml(this._error)}</p>` : ""}
           <nav class="overview" aria-label="Planer-Übersicht">
             <span><strong>${this._data.participants.filter((item) => item.active).length}</strong> Teilnehmer</span>
             <span><strong>${this._data.choreTypes.filter((item) => item.active).length}</strong> Aufgabentypen</span>
@@ -1518,8 +1521,10 @@
         input,select { width:100%; min-height:38px; padding:7px 10px; color:var(--ink);
           background:color-mix(in srgb,var(--surface) 92%,transparent);
           border:1px solid var(--line); border-radius:9px; font:inherit; font-size:12px; }
-        input:focus,select:focus { outline:2px solid color-mix(in srgb,var(--accent) 18%,transparent);
-          border-color:var(--accent); }
+        input:focus-visible,select:focus-visible,button:focus-visible,
+        summary:focus-visible { outline:3px solid
+          color-mix(in srgb,var(--accent) 65%,white);
+          outline-offset:2px; border-color:var(--accent); }
         button { min-height:38px; padding:8px 13px; color:var(--ink);
           background:var(--surface); border:1px solid var(--line);
           border-radius:10px; font:inherit; font-size:12px; font-weight:750;
@@ -1549,6 +1554,9 @@
         .weekday-picker input:checked + span { color:var(--ink);
           border-color:color-mix(in srgb,var(--accent) 42%,var(--line));
           background:var(--accent-soft); }
+        .weekday-picker input:focus-visible + span {
+          outline:3px solid color-mix(in srgb,var(--accent) 65%,white);
+          outline-offset:2px; }
         .advanced-options { margin:8px 0; }
         .advanced-options > summary { padding:8px 10px; color:var(--muted);
           background:var(--surface); border:1px solid var(--line);
@@ -1581,6 +1589,8 @@
           border-radius:12px; background:var(--surface); cursor:pointer; }
         .image-option:has(input:checked) { border-color:var(--accent);
           box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 20%,transparent); }
+        .image-option:has(input:focus-visible) { outline:3px solid
+          color-mix(in srgb,var(--accent) 65%,white); outline-offset:2px; }
         .image-option input { position:absolute; opacity:0; pointer-events:none; }
         .image-option img { width:50px; height:50px; object-fit:contain; }
         .image-option > ha-icon { width:44px; height:44px; }
@@ -1709,6 +1719,9 @@
           .edit-hint { padding:4px; font-size:0; }
           .edit-hint ha-icon { width:18px; height:18px; }
           .image-picker > div { grid-template-columns:repeat(2,minmax(0,1fr)); }
+          button,input,select { min-height:44px; }
+          .refresh { min-height:44px; width:44px; height:44px; }
+          .actions button,.rule-actions button { flex:1 1 140px; }
         }
       `;
     }

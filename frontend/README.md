@@ -92,6 +92,14 @@ Both task-chain layouts collapse cleanly on small dashboards and retain the
 two-column race overview on typical 10-inch tablets. Motion is suppressed when
 the operating system requests reduced motion.
 
+Keyboard and accessibility behavior is part of the supported card contract:
+all controls expose a visible focus indicator, status and error messages are
+announced, and the race completion dialog keeps keyboard focus inside until it
+is closed with its button or Escape. Participant choices expose their selected
+state to assistive technology. At narrow phone widths the dialog uses the
+available dynamic viewport height, while form controls retain a minimum
+44-pixel touch target.
+
 Both cards expose `max_width` and `accent_color` in Home Assistant's visual
 card editor. `max_width` accepts 280 to 1400 pixels; the cards also shrink to
 the available dashboard column width.

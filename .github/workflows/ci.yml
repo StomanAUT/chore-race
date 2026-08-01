@@ -36,6 +36,11 @@ jobs:
       - name: Run tests
         run: python -m pytest
 
+      - name: Build and validate clean HACS package
+        run: |
+          python scripts/release_package.py build chore_race.zip
+          python scripts/release_package.py validate chore_race.zip
+
       - name: Validate Home Assistant integration
         uses: home-assistant/actions/hassfest@master
 

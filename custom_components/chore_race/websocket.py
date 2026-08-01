@@ -19,6 +19,15 @@ def _manager(hass: HomeAssistant) -> Any:
     return entries[0].runtime_data
 
 
+def _send_domain_error(
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    err: ChoreRaceError,
+) -> None:
+    """Send a stable machine-readable domain error code."""
+    connection.send_error(msg["id"], err.code, str(err))
+
+
 @websocket_api.websocket_command({vol.Required("type"): "chore_race/get_state"})
 @callback
 def websocket_get_state(
@@ -154,7 +163,7 @@ async def websocket_start_race(
     try:
         race_state = await manager.async_start_race()
     except ChoreRaceError as err:
-        connection.send_error(msg["id"], "chore_race_error", str(err))
+        _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], race_state)
 
@@ -177,7 +186,7 @@ async def websocket_stop_race(
     try:
         race_state = await manager.async_stop_race()
     except ChoreRaceError as err:
-        connection.send_error(msg["id"], "chore_race_error", str(err))
+        _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], race_state)
 
@@ -203,7 +212,7 @@ async def websocket_reset_race(
     try:
         race_state = await manager.async_reset_race(msg.get("race_id"))
     except ChoreRaceError as err:
-        connection.send_error(msg["id"], "chore_race_error", str(err))
+        _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], race_state)
 
@@ -234,7 +243,7 @@ async def websocket_remove_race_participant(
             msg["participant_id"], msg.get("race_id")
         )
     except ChoreRaceError as err:
-        connection.send_error(msg["id"], "chore_race_error", str(err))
+        _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], race_state)
 
@@ -263,7 +272,7 @@ async def websocket_complete_task(
             msg["participant_id"],
         )
     except ChoreRaceError as err:
-        connection.send_error(msg["id"], "chore_race_error", str(err))
+        _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], manager.race_state())
 
@@ -299,7 +308,7 @@ async def websocket_complete_race_task(
             fair_play=msg["fair_play"],
         )
     except ChoreRaceError as err:
-        connection.send_error(msg["id"], "chore_race_error", str(err))
+        _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], manager.race_state())
 
@@ -325,7 +334,7 @@ async def websocket_select_reward(
     try:
         await manager.async_select_reward(msg["race_id"], msg["reward_id"])
     except ChoreRaceError as err:
-        connection.send_error(msg["id"], "chore_race_error", str(err))
+        _send_domain_error(connection, msg, err)
         return
     connection.send_result(msg["id"], manager.race_state(msg["race_id"]))
 
