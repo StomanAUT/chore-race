@@ -12,10 +12,9 @@
   <a href="README.md">English</a> · <strong>Deutsch</strong>
 </p>
 
-> [!IMPORTANT]
-> Chore Race wird aktiv entwickelt. Speicherschema und Schnittstellen können
-> sich bis zur stabilen Version 1.0 noch ändern. Erstelle vor jedem Update ein
-> vollständiges Home-Assistant-Backup.
+> [!NOTE]
+> Chore Race 1.0 ist die erste stabile öffentliche Familienversion. Erstelle
+> vor jedem Update ein vollständiges Home-Assistant-Backup.
 
 ## Was Chore Race bietet
 
