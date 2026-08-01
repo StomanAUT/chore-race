@@ -12,10 +12,9 @@
   <strong>English</strong> · <a href="README.de.md">Deutsch</a>
 </p>
 
-> [!IMPORTANT]
-> Chore Race is under active development. Storage schemas and APIs may still
-> change before the stable 1.0 release. Create a Home Assistant backup before
-> every upgrade.
+> [!NOTE]
+> Chore Race 1.0 is the first stable public family release. Create a Home
+> Assistant backup before every upgrade.
 
 ## What it does
 
